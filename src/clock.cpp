@@ -46,6 +46,7 @@ void Clock::showCalendar()
     calendar->setWindowFlags(Qt::Popup | Qt::FramelessWindowHint);
     calendar->setSelectedDate(QDate::currentDate());
     calendar->setFocusPolicy(Qt::StrongFocus);
+    calendar->setStyleSheet(Config::calendarStyleSheet());
     m_calendar = calendar;
 
     QWidget *panel = window();

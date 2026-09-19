@@ -63,6 +63,25 @@ inline QString menuStyleSheet()
         .arg(kMenuSeparatorHorizontalMargin);
 }
 
+inline QString calendarStyleSheet()
+{
+    return QStringLiteral(
+               "QCalendarWidget { background-color: #303030; color: #eeeeee; border: 1px solid #606060; }"
+               "QCalendarWidget #qt_calendar_navigationbar { background-color: #303030; }"
+               "QCalendarWidget QToolButton { color: #eeeeee; background-color: #303030; border: none; padding: 2px; }"
+               "QCalendarWidget QToolButton:hover { background-color: rgba(255, 255, 255, 24); }"
+               "QCalendarWidget QMenu { background-color: #303030; color: #eeeeee; border: 1px solid #606060; padding: 2px; }"
+               "QCalendarWidget QMenu::item { padding: 3px 30px 3px 8px; }"
+               "QCalendarWidget QMenu::item:selected { background: rgba(255, 255, 255, 32); }"
+               "QCalendarWidget QAbstractItemView:enabled { background-color: #303030; "
+               "alternate-background-color: #282828; color: #eeeeee; "
+               "selection-background-color: #2075ba; selection-color: #ffffff; }"
+               "QCalendarWidget QAbstractItemView:disabled { background-color: #303030; "
+               "alternate-background-color: #282828; color: #888888; }"
+               "QCalendarWidget QSpinBox { color: #eeeeee; background-color: #303030; "
+               "selection-background-color: #2075ba; selection-color: #ffffff; border: none; }");
+}
+
 inline QString panelStyleSheet()
 {
     return QStringLiteral(
