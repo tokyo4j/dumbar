@@ -14,8 +14,6 @@ Q_LOGGING_CATEGORY(lcDumbar, "dumbar", QtWarningMsg)
 
 namespace
 {
-constexpr auto kDefaultIconTheme = "breeze-dark";
-
 void configureDumbarLogging()
 {
     qSetMessagePattern(QStringLiteral("%{time hh:mm:ss.zzz} [%{file}:%{line}] %{message}"));
@@ -27,7 +25,7 @@ void configureDumbarLogging()
 
 void configureIconTheme()
 {
-    QIcon::setThemeName(QString::fromLatin1(kDefaultIconTheme));
+    QIcon::setThemeName(QString::fromLatin1(DumbarStyle::kDefaultIconTheme));
     qCDebug(lcDumbar) << "using default icon theme" << QIcon::themeName();
 }
 

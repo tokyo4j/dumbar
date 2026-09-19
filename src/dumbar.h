@@ -7,6 +7,8 @@ Q_DECLARE_LOGGING_CATEGORY(lcDumbar)
 
 namespace DumbarStyle
 {
+inline constexpr auto kDefaultIconTheme = "breeze-dark";
+
 inline constexpr int kPanelHeight = 40;
 inline constexpr int kPanelSpacing = 4;
 inline constexpr int kPanelWidgetPadding = 2;
