@@ -4,6 +4,7 @@
 
 class QToolButton;
 class AudioBackend;
+class LayerShellTooltip;
 
 class Audio final : public QWidget
 {
@@ -25,6 +26,8 @@ public:
 
     void toggleMute(Endpoint endpoint);
     void changeVolume(Endpoint endpoint, int delta);
+    void showTooltip(QWidget *button, Endpoint endpoint);
+    void hideTooltip(QWidget *button);
 
 private slots:
     void backendStateChanged();
@@ -33,6 +36,7 @@ private:
     void updateButtons();
 
     AudioBackend *m_backend = nullptr;
+    LayerShellTooltip *m_tooltip = nullptr;
     VolumeState m_microphone;
     VolumeState m_speaker;
     QToolButton *m_microphoneButton = nullptr;

@@ -1,10 +1,13 @@
 #include "audio.h"
 
 #include "dumbar.h"
+#include "layershell/layershelltooltip.h"
 
 #include <QApplication>
 #include <QByteArray>
 #include <QCoreApplication>
+#include <QEnterEvent>
+#include <QEvent>
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QMetaObject>
@@ -41,6 +44,13 @@ QString endpointIcon(Audio::Endpoint endpoint, const Audio::VolumeState &state)
     return QStringLiteral("audio-volume-high");
 }
 
+QString endpointTooltip(Audio::Endpoint endpoint, const Audio::VolumeState &state)
+{
+    const QString name = endpoint == Audio::Endpoint::Microphone ? QStringLiteral("mic")
+                                                                   : QStringLiteral("speaker");
+    return QStringLiteral("%1: %2%").arg(name).arg(state.percent);
+}
+
 class AudioButton final : public QToolButton
 {
 public:
@@ -51,6 +61,8 @@ public:
     {
         setAutoRaise(true);
         setFocusPolicy(Qt::NoFocus);
+        setAttribute(Qt::WA_Hover);
+        setMouseTracking(true);
         setIconSize(QSize(18, 18));
         setFixedWidth(24);
         setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
@@ -63,6 +75,18 @@ protected:
         if (delta != 0)
             m_audio->changeVolume(m_endpoint, delta > 0 ? 5 : -5);
         event->accept();
+    }
+
+    void enterEvent(QEnterEvent *event) override
+    {
+        QToolButton::enterEvent(event);
+        m_audio->showTooltip(this, m_endpoint);
+    }
+
+    void leaveEvent(QEvent *event) override
+    {
+        m_audio->hideTooltip(this);
+        QToolButton::leaveEvent(event);
     }
 
 private:
@@ -445,6 +469,7 @@ Audio::Audio(QWidget *parent)
 
     m_microphoneButton = new AudioButton(this, Endpoint::Microphone, this);
     m_speakerButton = new AudioButton(this, Endpoint::Speaker, this);
+    m_tooltip = new LayerShellTooltip(this);
     layout->addWidget(m_microphoneButton);
     layout->addWidget(m_speakerButton);
     setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
@@ -476,6 +501,20 @@ void Audio::changeVolume(Endpoint endpoint, int delta)
     m_backend->setVolume(endpoint, qBound(0, current + delta, 100));
 }
 
+void Audio::showTooltip(QWidget *button, Endpoint endpoint)
+{
+    if (m_tooltip) {
+        const VolumeState &state = endpoint == Endpoint::Microphone ? m_microphone : m_speaker;
+        m_tooltip->show(button, endpointTooltip(endpoint, state));
+    }
+}
+
+void Audio::hideTooltip(QWidget *button)
+{
+    if (m_tooltip)
+        m_tooltip->hide(button);
+}
+
 void Audio::backendStateChanged()
 {
     if (!m_backend)
@@ -489,20 +528,17 @@ void Audio::backendStateChanged()
 
 void Audio::updateButtons()
 {
-    const auto update = [](QToolButton *button,
-                           Endpoint endpoint,
-                           const VolumeState &state) {
+    const auto update = [this](QToolButton *button,
+                               Endpoint endpoint,
+                               const VolumeState &state) {
         QIcon icon = QIcon::fromTheme(endpointIcon(endpoint, state));
         if (icon.isNull() && endpoint == Endpoint::Speaker) {
             icon = QApplication::style()->standardIcon(
                 state.muted ? QStyle::SP_MediaVolumeMuted : QStyle::SP_MediaVolume);
         }
         button->setIcon(icon);
-        const QString name = endpoint == Endpoint::Microphone ? QStringLiteral("Microphone")
-                                                               : QStringLiteral("Speaker");
-        const QString status = state.muted ? QStringLiteral("muted")
-                                           : QStringLiteral("%1%").arg(state.percent);
-        button->setToolTip(QStringLiteral("%1: %2").arg(name, status));
+        if (m_tooltip)
+            m_tooltip->update(button, endpointTooltip(endpoint, state));
     };
 
     update(m_microphoneButton, Endpoint::Microphone, m_microphone);
