@@ -3,6 +3,9 @@
 #include "iconresolver.h"
 #include "toplevelmanager.h"
 
+#include <QApplication>
+#include <QDrag>
+#include <QMimeData>
 #include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
@@ -12,6 +15,7 @@ namespace
 constexpr int kIconSize = 16;
 constexpr int kHorizontalPadding = 4;
 constexpr int kIconTextGap = 4;
+constexpr auto kTaskButtonMimeType = "application/x-dumbar-task-button";
 }
 
 TaskButton::TaskButton(Toplevel *toplevel, IconResolver *icons, QWidget *parent)
@@ -84,6 +88,11 @@ void TaskButton::paintEvent(QPaintEvent *event)
 void TaskButton::mousePressEvent(QMouseEvent *event)
 {
     switch (event->button()) {
+    case Qt::LeftButton:
+        m_pressPosition = event->position().toPoint();
+        m_dragStarted = false;
+        QToolButton::mousePressEvent(event);
+        return;
     case Qt::MiddleButton:
         if (m_toplevel)
             m_toplevel->close();
@@ -104,4 +113,50 @@ void TaskButton::mousePressEvent(QMouseEvent *event)
         QToolButton::mousePressEvent(event);
         return;
     }
+}
+
+void TaskButton::mouseMoveEvent(QMouseEvent *event)
+{
+    if (!m_dragStarted && (event->buttons() & Qt::LeftButton)
+        && (event->position().toPoint() - m_pressPosition).manhattanLength()
+               >= QApplication::startDragDistance()) {
+        m_dragStarted = true;
+        setDown(false);
+        startDrag();
+        return;
+    }
+
+    QToolButton::mouseMoveEvent(event);
+}
+
+void TaskButton::mouseReleaseEvent(QMouseEvent *event)
+{
+    if (event->button() == Qt::LeftButton && m_dragStarted) {
+        m_dragStarted = false;
+        event->accept();
+        return;
+    }
+
+    QToolButton::mouseReleaseEvent(event);
+}
+
+void TaskButton::startDrag()
+{
+    auto *mimeData = new QMimeData;
+    mimeData->setData(kTaskButtonMimeType, QByteArrayLiteral("move"));
+
+    QPixmap pixmap(size());
+    pixmap.fill(Qt::transparent);
+    render(&pixmap);
+    {
+        QPainter painter(&pixmap);
+        painter.setCompositionMode(QPainter::CompositionMode_DestinationIn);
+        painter.fillRect(pixmap.rect(), QColor(255, 255, 255, 176));
+    }
+
+    auto *drag = new QDrag(this);
+    drag->setMimeData(mimeData);
+    drag->setPixmap(pixmap);
+    drag->setHotSpot(m_pressPosition);
+    drag->exec(Qt::MoveAction);
 }
