@@ -62,6 +62,12 @@ add_executable(dumbar
     src/tray.h
     src/trayitem.cpp
     src/trayitem.h
+    src/layershell/popup.cpp
+    src/layershell/popup.h
+    src/layershell/layershellmenu.cpp
+    src/layershell/layershellmenu.h
+    src/layershell/layershelltooltip.cpp
+    src/layershell/layershelltooltip.h
     src/clock.cpp
     src/clock.h
     src/iconresolver.cpp

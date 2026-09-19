@@ -1,8 +1,10 @@
 #pragma once
 
 #include <QDBusConnection>
+#include <QDBusMessage>
 #include <QIcon>
 #include <QObject>
+#include <QVariantList>
 
 class TrayItem final : public QObject
 {
@@ -21,6 +23,8 @@ public:
     QString status() const { return m_status; }
     QString toolTip() const { return m_toolTip; }
     QIcon icon() const { return m_icon; }
+    bool itemIsMenu() const { return m_itemIsMenu; }
+    bool hasMenu() const { return !m_menuPath.isEmpty(); }
     bool isValid() const { return m_valid; }
     bool isPassive() const { return m_status == QLatin1String("Passive"); }
 
@@ -28,6 +32,9 @@ public:
     void secondaryActivate(int x, int y);
     void scroll(int delta, const QString &orientation);
     void contextMenu(int x, int y);
+
+    QDBusMessage callMenu(const QString &method, const QVariantList &arguments = {}) const;
+    void menuEvent(int itemId) const;
 
 public slots:
     void refresh();

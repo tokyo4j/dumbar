@@ -7,6 +7,7 @@
 #include <QDBusMessage>
 #include <QDBusObjectPath>
 #include <QDBusVariant>
+#include <QDateTime>
 #include <QImage>
 #include <QPainter>
 #include <QtEndian>
@@ -27,6 +28,14 @@ QVariant unbox(const QVariant &value)
     return value;
 }
 
+QVariant unwrapVariants(const QVariant &value)
+{
+    QVariant result = value;
+    while (result.metaType() == QMetaType::fromType<QDBusVariant>())
+        result = result.value<QDBusVariant>().variant();
+    return result;
+}
+
 QVariantMap propertiesFromReply(const QDBusMessage &reply)
 {
     if (reply.type() == QDBusMessage::ErrorMessage || reply.arguments().isEmpty())
@@ -45,7 +54,7 @@ QImage imageFromPixmapValue(const QVariant &value)
     if (unboxed.metaType() != QMetaType::fromType<QDBusArgument>())
         return {};
 
-    QDBusArgument argument = unboxed.value<QDBusArgument>();
+    const QDBusArgument argument = unboxed.value<QDBusArgument>();
     QImage bestImage;
     int bestScore = std::numeric_limits<int>::max();
     argument.beginArray();
@@ -79,28 +88,44 @@ QImage imageFromPixmapValue(const QVariant &value)
 
 QString toolTipFromValue(const QVariant &value)
 {
-    const QVariant unboxed = unbox(value);
+    // ToolTip is a structured SNI property.  Only unwrap the D-Bus variant
+    // wrapper here; treating the structure itself as a variant loses it.
+    const QVariant unboxed = unwrapVariants(value);
     if (unboxed.metaType() != QMetaType::fromType<QDBusArgument>())
         return {};
 
-    QDBusArgument argument = unboxed.value<QDBusArgument>();
+    const QDBusArgument argument = unboxed.value<QDBusArgument>();
+    QString iconName;
     QString title;
     QString description;
     argument.beginStructure();
-    argument.beginStructure();
-    int width = 0;
-    int height = 0;
-    argument >> width >> height;
-    argument.endStructure();
+    argument >> iconName;
+    argument.beginArray();
+    while (!argument.atEnd()) {
+        argument.beginStructure();
+        int width = 0;
+        int height = 0;
+        QByteArray pixels;
+        argument >> width >> height >> pixels;
+        argument.endStructure();
+    }
+    argument.endArray();
     argument >> title >> description;
     argument.endStructure();
-    Q_UNUSED(width)
-    Q_UNUSED(height)
+    Q_UNUSED(iconName)
     if (title.isEmpty())
         return description;
     if (description.isEmpty())
         return title;
     return title + QStringLiteral("\n") + description;
+}
+
+QString objectPathFromValue(const QVariant &value)
+{
+    const QVariant unboxed = unbox(value);
+    if (unboxed.metaType() == QMetaType::fromType<QDBusObjectPath>())
+        return unboxed.value<QDBusObjectPath>().path();
+    return unboxed.toString();
 }
 
 QIcon iconFromValues(const QString &name, const QVariant &pixmap)
@@ -150,6 +175,12 @@ TrayItem::TrayItem(const QDBusConnection &bus,
                   m_path,
                   QString::fromLatin1(kItemInterface),
                   QStringLiteral("NewToolTip"),
+                  this,
+                  SLOT(refresh()));
+    m_bus.connect(m_service,
+                  m_path,
+                  QString::fromLatin1(kItemInterface),
+                  QStringLiteral("NewTitle"),
                   this,
                   SLOT(refresh()));
     refresh();
@@ -230,8 +261,12 @@ void TrayItem::applyProperties(const QVariantMap &properties)
     }
 
     m_toolTip = toolTipFromValue(properties.value(QStringLiteral("ToolTip")));
+    if (m_toolTip.isEmpty())
+        m_toolTip = unbox(properties.value(QStringLiteral("IconAccessibleDesc"))).toString();
+    if (m_toolTip.isEmpty())
+        m_toolTip = unbox(properties.value(QStringLiteral("Title"))).toString();
     m_itemIsMenu = unbox(properties.value(QStringLiteral("ItemIsMenu"))).toBool();
-    m_menuPath = unbox(properties.value(QStringLiteral("Menu"))).toString();
+    m_menuPath = objectPathFromValue(properties.value(QStringLiteral("Menu")));
     m_valid = true;
     emit changed(this);
 }
@@ -258,4 +293,29 @@ void TrayItem::contextMenu(int x, int y)
 {
     QDBusInterface item(m_service, m_path, QString::fromLatin1(kItemInterface), m_bus);
     item.call(QStringLiteral("ContextMenu"), x, y);
+}
+
+QDBusMessage TrayItem::callMenu(const QString &method, const QVariantList &arguments) const
+{
+    if (!hasMenu())
+        return {};
+
+    QDBusInterface menu(m_service, m_menuPath, QStringLiteral("com.canonical.dbusmenu"), m_bus);
+    menu.setTimeout(1000);
+    return menu.callWithArgumentList(QDBus::Block, method, arguments);
+}
+
+void TrayItem::menuEvent(int itemId) const
+{
+    // com.canonical.dbusmenu uses the same millisecond timestamp convention
+    // as a native pointer event.  The protocol field is uint32 and therefore
+    // intentionally wraps just like the toolkit event timestamps do.
+    const quint32 timestamp = static_cast<quint32>(QDateTime::currentMSecsSinceEpoch());
+    const QVariantList arguments {
+        itemId,
+        QStringLiteral("clicked"),
+        QVariant::fromValue(QDBusVariant(QVariant(0))),
+        timestamp,
+    };
+    callMenu(QStringLiteral("Event"), arguments);
 }

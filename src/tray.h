@@ -4,9 +4,12 @@
 
 #include <QDBusConnection>
 #include <QHash>
+#include <QPointer>
 #include <QWidget>
 
 class QDBusServiceWatcher;
+class LayerShellTooltip;
+class LayerShellMenu;
 
 class Tray final : public QWidget
 {
@@ -23,6 +26,10 @@ public slots:
 public:
     void removeItemsForService(const QString &service);
     QStringList registeredItems() const;
+
+    void showTooltip(QWidget *button, const QString &text);
+    void hideTooltip(QWidget *button);
+    void showPopup(TrayItem *item, QWidget *button);
 
 private slots:
     void itemChanged(TrayItem *item);
@@ -42,6 +49,9 @@ private:
     class QHBoxLayout *m_layout = nullptr;
     QHash<QString, TrayItem *> m_items;
     QHash<QString, QWidget *> m_buttons;
+    LayerShellTooltip *m_tooltip = nullptr;
+    QPointer<LayerShellMenu> m_popup;
+    QPointer<TrayItem> m_popupItem;
     bool m_ownsWatcher = false;
     bool m_warned = false;
 };
