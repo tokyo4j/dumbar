@@ -1,0 +1,23 @@
+pkgname=dumbar
+pkgver=0.1
+pkgrel=1
+pkgdesc='A simple Wayland panel and taskbar built with Qt 6'
+arch=('x86_64')
+url='https://github.com/tokyo4j/dumbar'
+license=('unknown')
+depends=('layer-shell-qt' 'libpulse' 'qt6-base' 'qt6-wayland' 'wayland')
+makedepends=('cmake' 'ninja' 'pkgconf')
+
+source=("git+https://github.com/tokyo4j/dumbar.git")
+sha256sums=('SKIP')
+
+build() {
+	cmake -S "$srcdir/dumbar" -B "$srcdir/build" -G Ninja \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_INSTALL_PREFIX=/usr
+	cmake --build "$srcdir/build"
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install "$srcdir/build"
+}
