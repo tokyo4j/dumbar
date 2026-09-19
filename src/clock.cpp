@@ -8,11 +8,6 @@
 #include <QDateTime>
 #include <QScreen>
 
-namespace
-{
-constexpr auto kClockFormat = "HH:mm";
-}
-
 Clock::Clock(QWidget *parent)
     : QToolButton(parent)
 {
@@ -32,10 +27,8 @@ Clock::Clock(QWidget *parent)
 void Clock::updateClock()
 {
     const QDateTime now = QDateTime::currentDateTime();
-    const QString time = now.toString(QString::fromLatin1(kClockFormat));
-    const QString date = now.toString(QStringLiteral("dddd, MMMM d, yyyy"));
-    setText(time);
-    m_tooltip->setText(QStringLiteral("%1\n%2").arg(time, date));
+    setText(now.toString(QString::fromLatin1(DumbarStyle::kClockFormat)));
+    m_tooltip->setText(now.toString(QString::fromLatin1(DumbarStyle::kClockTooltipFormat)));
 }
 
 void Clock::showCalendar()
