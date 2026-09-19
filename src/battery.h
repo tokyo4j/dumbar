@@ -4,6 +4,7 @@
 #include <QWidget>
 
 class QLabel;
+class LayerShellTooltip;
 
 class Battery final : public QWidget
 {
@@ -24,6 +25,7 @@ private:
     void applyProperties(const QVariantMap &properties);
 
     QDBusConnection m_bus;
+    LayerShellTooltip *m_tooltip = nullptr;
     QLabel *m_icon = nullptr;
     QLabel *m_text = nullptr;
     bool m_warned = false;

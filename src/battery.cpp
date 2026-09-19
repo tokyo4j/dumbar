@@ -1,6 +1,7 @@
 #include "battery.h"
 
 #include "dumbar.h"
+#include "layershell/layershelltooltip.h"
 
 #include <QDBusArgument>
 #include <QDBusInterface>
@@ -71,9 +72,12 @@ Battery::Battery(QWidget *parent)
     m_icon = new QLabel(this);
     m_icon->setFixedWidth(DumbarStyle::kIconSize);
     m_icon->setAlignment(Qt::AlignCenter);
+    m_icon->setAttribute(Qt::WA_TransparentForMouseEvents);
     m_text = new QLabel(this);
+    m_text->setAttribute(Qt::WA_TransparentForMouseEvents);
     layout->addWidget(m_icon);
     layout->addWidget(m_text);
+    m_tooltip = new LayerShellTooltip(this, this);
     setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
 
     if (!m_bus.isConnected()) {
@@ -130,12 +134,14 @@ void Battery::refresh()
             qWarning() << "dumbar: UPower is unavailable:" << reply.errorMessage();
             m_warned = true;
         }
+        m_tooltip->setText({});
         hide();
         return;
     }
 
     const QVariantMap properties = propertiesFromReply(reply);
     if (properties.isEmpty()) {
+        m_tooltip->setText({});
         hide();
         return;
     }
@@ -145,6 +151,7 @@ void Battery::refresh()
 void Battery::applyProperties(const QVariantMap &properties)
 {
     if (!unbox(properties.value(QStringLiteral("IsPresent"))).toBool()) {
+        m_tooltip->setText({});
         hide();
         return;
     }
@@ -175,6 +182,6 @@ void Battery::applyProperties(const QVariantMap &properties)
     const QString duration = formatDuration(remaining);
     if (!duration.isEmpty())
         tooltip += QStringLiteral("\n%1 remaining").arg(duration);
-    setToolTip(tooltip);
+    m_tooltip->setText(tooltip);
     show();
 }
