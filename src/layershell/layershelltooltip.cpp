@@ -7,11 +7,6 @@
 #include <QFont>
 #include <QLabel>
 
-namespace
-{
-constexpr int kTooltipDelay = 500;
-}
-
 LayerShellTooltip::LayerShellTooltip(QObject *parent, QWidget *anchor)
     : QObject(parent)
     , m_anchor(anchor)
@@ -48,7 +43,7 @@ void LayerShellTooltip::show()
         return;
     }
 
-    m_timer.start(kTooltipDelay);
+    m_timer.start(DumbarStyle::kTooltipDelay);
 }
 
 void LayerShellTooltip::update()
