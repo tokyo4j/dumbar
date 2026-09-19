@@ -70,7 +70,7 @@ Battery::Battery(QWidget *parent)
     layout->setSpacing(2);
 
     m_icon = new QLabel(this);
-    m_icon->setFixedWidth(DumbarStyle::kIconSize);
+    m_icon->setFixedWidth(Config::kIconSize);
     m_icon->setAlignment(Qt::AlignCenter);
     m_icon->setAttribute(Qt::WA_TransparentForMouseEvents);
     m_text = new QLabel(this);
@@ -163,7 +163,7 @@ void Battery::applyProperties(const QVariantMap &properties)
     if (icon.isNull())
         icon = QIcon::fromTheme(QStringLiteral("battery-full"));
 
-    const QPixmap pixmap = icon.pixmap(DumbarStyle::kIconSize, DumbarStyle::kIconSize);
+    const QPixmap pixmap = icon.pixmap(Config::kIconSize, Config::kIconSize);
     if (pixmap.isNull()) {
         m_icon->setText(QStringLiteral("🔋"));
     } else {

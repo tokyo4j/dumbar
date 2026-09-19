@@ -27,8 +27,8 @@ Clock::Clock(QWidget *parent)
 void Clock::updateClock()
 {
     const QDateTime now = QDateTime::currentDateTime();
-    setText(now.toString(QString::fromLatin1(DumbarStyle::kClockFormat)));
-    m_tooltip->setText(now.toString(QString::fromLatin1(DumbarStyle::kClockTooltipFormat)));
+    setText(now.toString(QString::fromLatin1(Config::kClockFormat)));
+    m_tooltip->setText(now.toString(QString::fromLatin1(Config::kClockTooltipFormat)));
 }
 
 void Clock::showCalendar()

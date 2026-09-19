@@ -59,8 +59,8 @@ public:
     {
         setAutoRaise(true);
         setFocusPolicy(Qt::NoFocus);
-        setIconSize(QSize(DumbarStyle::kIconSize, DumbarStyle::kIconSize));
-        setFixedWidth(DumbarStyle::kPanelButtonWidth);
+        setIconSize(QSize(Config::kIconSize, Config::kIconSize));
+        setFixedWidth(Config::kPanelButtonWidth);
         setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
     }
 

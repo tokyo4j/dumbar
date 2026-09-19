@@ -25,7 +25,7 @@ void configureDumbarLogging()
 
 void configureIconTheme()
 {
-    QIcon::setThemeName(QString::fromLatin1(DumbarStyle::kDefaultIconTheme));
+    QIcon::setThemeName(QString::fromLatin1(Config::kDefaultIconTheme));
     qCDebug(lcDumbar) << "using default icon theme" << QIcon::themeName();
 }
 

@@ -43,7 +43,7 @@ void LayerShellTooltip::show()
         return;
     }
 
-    m_timer.start(DumbarStyle::kTooltipDelay);
+    m_timer.start(Config::kTooltipDelay);
 }
 
 void LayerShellTooltip::update()
@@ -102,13 +102,13 @@ void LayerShellTooltip::showWindow()
     tooltip->setObjectName(QStringLiteral("dumbarTooltip"));
     tooltip->setTextFormat(Qt::PlainText);
     tooltip->setWordWrap(true);
-    tooltip->setMaximumWidth(DumbarStyle::kTooltipMaxWidth);
-    tooltip->setMargin(DumbarStyle::kTooltipMargin);
+    tooltip->setMaximumWidth(Config::kTooltipMaxWidth);
+    tooltip->setMargin(Config::kTooltipMargin);
     QFont tooltipFont = tooltip->font();
-    tooltipFont.setPixelSize(DumbarStyle::kFontSize);
+    tooltipFont.setPixelSize(Config::kFontSize);
     tooltip->setFont(tooltipFont);
     tooltip->setText(m_text);
-    tooltip->setStyleSheet(DumbarStyle::tooltipStyleSheet());
+    tooltip->setStyleSheet(Config::tooltipStyleSheet());
     tooltip->adjustSize();
 
     if (!LayerShellPopup::configure(tooltip,

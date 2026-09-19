@@ -5,7 +5,7 @@
 
 Q_DECLARE_LOGGING_CATEGORY(lcDumbar)
 
-namespace DumbarStyle
+namespace Config
 {
 inline constexpr auto kDefaultIconTheme = "breeze-dark";
 

@@ -18,7 +18,7 @@ int taskButtonWidth(int availableWidth, int windowCount)
 {
     if (windowCount <= 0)
         return 0;
-    return qMin(DumbarStyle::kTaskButtonPreferredWidth, qMax(0, availableWidth / windowCount));
+    return qMin(Config::kTaskButtonPreferredWidth, qMax(0, availableWidth / windowCount));
 }
 
 TaskBar::TaskBar(ToplevelManager *manager, IconResolver *icons, wl_output *output, QWidget *parent)
@@ -43,8 +43,8 @@ TaskBar::TaskBar(ToplevelManager *manager, IconResolver *icons, wl_output *outpu
     m_dropIndicator = new QWidget(this);
     m_dropIndicator->setObjectName(QStringLiteral("dropIndicator"));
     m_dropIndicator->setAttribute(Qt::WA_TransparentForMouseEvents);
-    m_dropIndicator->setFixedSize(DumbarStyle::kDropIndicatorWidth, DumbarStyle::kDropIndicatorHeight);
-    m_dropIndicator->setStyleSheet(DumbarStyle::dropIndicatorStyleSheet());
+    m_dropIndicator->setFixedSize(Config::kDropIndicatorWidth, Config::kDropIndicatorHeight);
+    m_dropIndicator->setStyleSheet(Config::dropIndicatorStyleSheet());
     m_dropIndicator->hide();
 
     if (!manager) {
@@ -249,15 +249,15 @@ void TaskBar::updateDropIndicator(const QPoint &position, TaskButton *source)
     const int boundary = insertionIndex < buttons.size()
         ? buttons.at(insertionIndex)->geometry().left()
         : buttons.constLast()->geometry().right() + 1;
-    const int indicatorX = std::clamp(boundary - DumbarStyle::kDropIndicatorWidth / 2,
+    const int indicatorX = std::clamp(boundary - Config::kDropIndicatorWidth / 2,
                                       0,
-                                      qMax(0, width() - DumbarStyle::kDropIndicatorWidth));
-    const int indicatorHeight = qMin(DumbarStyle::kDropIndicatorHeight, height());
+                                      qMax(0, width() - Config::kDropIndicatorWidth));
+    const int indicatorHeight = qMin(Config::kDropIndicatorHeight, height());
     const int indicatorY = qMax(0, (height() - indicatorHeight) / 2);
     m_dropIndicator->setFixedHeight(indicatorHeight);
     m_dropIndicator->setGeometry(indicatorX,
                                  indicatorY,
-                                 DumbarStyle::kDropIndicatorWidth,
+                                 Config::kDropIndicatorWidth,
                                  indicatorHeight);
     m_dropIndicator->raise();
     m_dropIndicator->show();

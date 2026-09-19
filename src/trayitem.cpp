@@ -71,7 +71,7 @@ QImage imageFromPixmap(const QVariant &value)
         if (width <= 0 || height <= 0 || pixels.size() < width * height * 4)
             continue;
 
-        const int score = qAbs(width - DumbarStyle::kIconSize) + qAbs(height - DumbarStyle::kIconSize);
+        const int score = qAbs(width - Config::kIconSize) + qAbs(height - Config::kIconSize);
         if (score >= bestScore)
             continue;
 
@@ -150,8 +150,8 @@ TrayItem::TrayItem(const QDBusConnection &bus, QString service, QString path, QW
 {
     setAutoRaise(true);
     setFocusPolicy(Qt::NoFocus);
-    setIconSize(QSize(DumbarStyle::kIconSize, DumbarStyle::kIconSize));
-    setFixedWidth(DumbarStyle::kPanelButtonWidth);
+    setIconSize(QSize(Config::kIconSize, Config::kIconSize));
+    setFixedWidth(Config::kPanelButtonWidth);
     setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
     setToolTip(QString());
     m_tooltip = new LayerShellTooltip(this, this);

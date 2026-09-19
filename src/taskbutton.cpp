@@ -29,7 +29,7 @@ TaskButton::TaskButton(Toplevel *toplevel, IconResolver *icons, QWidget *parent)
     setToolButtonStyle(Qt::ToolButtonIconOnly);
 
     QFont taskButtonFont = font();
-    taskButtonFont.setPixelSize(DumbarStyle::kFontSize);
+    taskButtonFont.setPixelSize(Config::kFontSize);
     setFont(taskButtonFont);
 
     connect(this, &QToolButton::clicked, this, &TaskButton::activateOrMinimize);
@@ -79,14 +79,14 @@ void TaskButton::paintEvent(QPaintEvent *event)
     else if (hovered)
         painter.fillRect(rect(), QColor(255, 255, 255, 18));
 
-    const int iconX = DumbarStyle::kTaskButtonIconPadding;
-    const int iconY = (height() - DumbarStyle::kIconSize) / 2;
+    const int iconX = Config::kTaskButtonIconPadding;
+    const int iconY = (height() - Config::kIconSize) / 2;
     if (!m_icon.isNull())
         m_icon.paint(&painter,
-                     QRect(iconX, iconY, DumbarStyle::kIconSize, DumbarStyle::kIconSize));
+                     QRect(iconX, iconY, Config::kIconSize, Config::kIconSize));
 
-    const int textX = iconX + DumbarStyle::kIconSize + DumbarStyle::kIconTextGap;
-    const int textWidth = width() - textX - DumbarStyle::kTaskButtonTextPadding;
+    const int textX = iconX + Config::kIconSize + Config::kIconTextGap;
+    const int textWidth = width() - textX - Config::kTaskButtonTextPadding;
     if (textWidth > 8) {
         const QFontMetrics metrics(font());
         const QString title = metrics.elidedText(m_toplevel->title(), Qt::ElideRight, textWidth);
@@ -113,9 +113,9 @@ void TaskButton::mousePressEvent(QMouseEvent *event)
     case Qt::RightButton: {
         QMenu menu(this);
         QFont menuFont = menu.font();
-        menuFont.setPixelSize(DumbarStyle::kFontSize);
+        menuFont.setPixelSize(Config::kFontSize);
         menu.setFont(menuFont);
-        menu.setStyleSheet(DumbarStyle::menuStyleSheet());
+        menu.setStyleSheet(Config::menuStyleSheet());
         menu.addAction(tr("Close"), this, &TaskButton::closeToplevel);
         menu.exec(event->globalPosition().toPoint());
         event->accept();
@@ -160,7 +160,7 @@ void TaskButton::startDrag()
     m_dragging = true;
     update();
 
-    QPixmap pixmap(DumbarStyle::kDragChipSize, DumbarStyle::kDragChipSize);
+    QPixmap pixmap(Config::kDragChipSize, Config::kDragChipSize);
     pixmap.fill(Qt::transparent);
     QPainter painter(&pixmap);
     painter.setRenderHint(QPainter::Antialiasing);
@@ -168,21 +168,21 @@ void TaskButton::startDrag()
     painter.setPen(QPen(QColor(255, 255, 255, 70), 1));
     painter.drawRoundedRect(QRectF(0.5,
                                    0.5,
-                                   DumbarStyle::kDragChipSize - 1,
-                                   DumbarStyle::kDragChipSize - 1),
-                            DumbarStyle::kDragChipRadius,
-                            DumbarStyle::kDragChipRadius);
+                                   Config::kDragChipSize - 1,
+                                   Config::kDragChipSize - 1),
+                            Config::kDragChipRadius,
+                            Config::kDragChipRadius);
     if (!m_icon.isNull())
         m_icon.paint(&painter,
-                     QRect((DumbarStyle::kDragChipSize - DumbarStyle::kIconSize) / 2,
-                           (DumbarStyle::kDragChipSize - DumbarStyle::kIconSize) / 2,
-                           DumbarStyle::kIconSize,
-                           DumbarStyle::kIconSize));
+                     QRect((Config::kDragChipSize - Config::kIconSize) / 2,
+                           (Config::kDragChipSize - Config::kIconSize) / 2,
+                           Config::kIconSize,
+                           Config::kIconSize));
 
     auto *drag = new QDrag(this);
     drag->setMimeData(mimeData);
     drag->setPixmap(pixmap);
-    drag->setHotSpot(QPoint(DumbarStyle::kDragChipSize / 2, DumbarStyle::kDragChipSize / 2));
+    drag->setHotSpot(QPoint(Config::kDragChipSize / 2, Config::kDragChipSize / 2));
     drag->exec(Qt::MoveAction);
 
     m_dragging = false;

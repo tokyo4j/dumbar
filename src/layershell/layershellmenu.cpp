@@ -9,11 +9,11 @@ LayerShellMenu::LayerShellMenu()
     : QMenu(nullptr)
 {
     QFont menuFont = font();
-    menuFont.setPixelSize(DumbarStyle::kFontSize);
+    menuFont.setPixelSize(Config::kFontSize);
     setFont(menuFont);
     setAttribute(Qt::WA_DeleteOnClose);
     setWindowFlags(Qt::Popup | Qt::FramelessWindowHint);
-    setStyleSheet(DumbarStyle::menuStyleSheet());
+    setStyleSheet(Config::menuStyleSheet());
     setSeparatorsCollapsible(false);
 }
 
