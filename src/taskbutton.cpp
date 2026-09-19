@@ -83,7 +83,13 @@ void TaskButton::paintEvent(QPaintEvent *event)
 
 void TaskButton::mousePressEvent(QMouseEvent *event)
 {
-    if (event->button() == Qt::RightButton) {
+    switch (event->button()) {
+    case Qt::MiddleButton:
+        if (m_toplevel)
+            m_toplevel->close();
+        event->accept();
+        return;
+    case Qt::RightButton: {
         QMenu menu(this);
         QAction *closeAction = menu.addAction(tr("Close"));
         connect(closeAction, &QAction::triggered, this, [this] {
@@ -94,6 +100,8 @@ void TaskButton::mousePressEvent(QMouseEvent *event)
         event->accept();
         return;
     }
-
-    QToolButton::mousePressEvent(event);
+    default:
+        QToolButton::mousePressEvent(event);
+        return;
+    }
 }
