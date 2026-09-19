@@ -264,6 +264,7 @@ void populateMenu(QMenu *menu, const MenuNode &node, TrayItem *item)
             auto *submenu = new QMenu(menu);
             submenu->setTitle(label);
             submenu->setIcon(action->icon());
+            submenu->setFont(menu->font());
             submenu->setStyleSheet(menu->styleSheet());
             submenu->setSeparatorsCollapsible(false);
             action->setMenu(submenu);

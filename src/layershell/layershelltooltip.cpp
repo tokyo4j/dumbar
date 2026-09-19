@@ -4,6 +4,7 @@
 #include "popup.h"
 
 #include <QEvent>
+#include <QFont>
 #include <QLabel>
 
 namespace
@@ -106,12 +107,13 @@ void LayerShellTooltip::showWindow()
     tooltip->setObjectName(QStringLiteral("dumbarTooltip"));
     tooltip->setTextFormat(Qt::PlainText);
     tooltip->setWordWrap(true);
-    tooltip->setMaximumWidth(512);
-    tooltip->setMargin(6);
+    tooltip->setMaximumWidth(DumbarStyle::kTooltipMaxWidth);
+    tooltip->setMargin(DumbarStyle::kTooltipMargin);
+    QFont tooltipFont = tooltip->font();
+    tooltipFont.setPixelSize(DumbarStyle::kFontSize);
+    tooltip->setFont(tooltipFont);
     tooltip->setText(m_text);
-    tooltip->setStyleSheet(QStringLiteral(
-        "QLabel#dumbarTooltip { background: #303030; color: #eeeeee; "
-        "border: 1px solid #606060; border-radius: 3px; }"));
+    tooltip->setStyleSheet(DumbarStyle::tooltipStyleSheet());
     tooltip->adjustSize();
 
     if (!LayerShellPopup::configure(tooltip,

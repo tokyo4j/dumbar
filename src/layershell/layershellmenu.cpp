@@ -1,19 +1,19 @@
 #include "layershellmenu.h"
 
+#include "../dumbar.h"
 #include "popup.h"
+
+#include <QFont>
 
 LayerShellMenu::LayerShellMenu()
     : QMenu(nullptr)
 {
+    QFont menuFont = font();
+    menuFont.setPixelSize(DumbarStyle::kFontSize);
+    setFont(menuFont);
     setAttribute(Qt::WA_DeleteOnClose);
     setWindowFlags(Qt::Popup | Qt::FramelessWindowHint);
-    setStyleSheet(QStringLiteral(
-        "QMenu { background: #303030; color: #eeeeee; border: 1px solid #606060; "
-        "padding: 4px; }"
-        "QMenu::item { padding: 5px 30px 5px 8px; }"
-        "QMenu::item:selected { background: rgba(255, 255, 255, 32); }"
-        "QMenu::item:disabled { color: #888888; }"
-        "QMenu::separator { height: 1px; background: #606060; margin: 4px 6px; }"));
+    setStyleSheet(DumbarStyle::menuStyleSheet());
     setSeparatorsCollapsible(false);
 }
 

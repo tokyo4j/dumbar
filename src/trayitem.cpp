@@ -1,5 +1,6 @@
 #include "trayitem.h"
 
+#include "dumbar.h"
 #include "layershell/layershelltooltip.h"
 
 #include <QDBusArgument>
@@ -70,7 +71,7 @@ QImage imageFromPixmap(const QVariant &value)
         if (width <= 0 || height <= 0 || pixels.size() < width * height * 4)
             continue;
 
-        const int score = qAbs(width - 18) + qAbs(height - 18);
+        const int score = qAbs(width - DumbarStyle::kIconSize) + qAbs(height - DumbarStyle::kIconSize);
         if (score >= bestScore)
             continue;
 
@@ -149,8 +150,8 @@ TrayItem::TrayItem(const QDBusConnection &bus, QString service, QString path, QW
 {
     setAutoRaise(true);
     setFocusPolicy(Qt::NoFocus);
-    setIconSize(QSize(18, 18));
-    setFixedSize(22, 24);
+    setIconSize(QSize(DumbarStyle::kIconSize, DumbarStyle::kIconSize));
+    setFixedWidth(DumbarStyle::kPanelButtonWidth);
     setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
     setToolTip(QString());
     m_tooltip = new LayerShellTooltip(this, this);

@@ -1,5 +1,7 @@
 #include "battery.h"
 
+#include "dumbar.h"
+
 #include <QDBusArgument>
 #include <QDBusInterface>
 #include <QDBusMessage>
@@ -67,7 +69,7 @@ Battery::Battery(QWidget *parent)
     layout->setSpacing(2);
 
     m_icon = new QLabel(this);
-    m_icon->setFixedWidth(18);
+    m_icon->setFixedWidth(DumbarStyle::kIconSize);
     m_icon->setAlignment(Qt::AlignCenter);
     m_text = new QLabel(this);
     layout->addWidget(m_icon);
@@ -154,7 +156,7 @@ void Battery::applyProperties(const QVariantMap &properties)
     if (icon.isNull())
         icon = QIcon::fromTheme(QStringLiteral("battery-full"));
 
-    const QPixmap pixmap = icon.pixmap(18, 18);
+    const QPixmap pixmap = icon.pixmap(DumbarStyle::kIconSize, DumbarStyle::kIconSize);
     if (pixmap.isNull()) {
         m_icon->setText(QStringLiteral("🔋"));
     } else {

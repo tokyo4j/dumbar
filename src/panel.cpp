@@ -10,6 +10,7 @@
 #include "tray.h"
 
 #include <QApplication>
+#include <QFont>
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QScreen>
@@ -19,12 +20,6 @@
 #include <LayerShellQt/Window>
 
 #include <wayland-client.h>
-
-namespace
-{
-constexpr int kPanelHeight = 32;
-constexpr int kPanelSpacing = 4;
-}
 
 Panel::Panel(ToplevelManager *toplevelManager, IconResolver *icons, QScreen *screen, QWidget *parent)
     : QWidget(parent)
@@ -37,15 +32,19 @@ Panel::Panel(ToplevelManager *toplevelManager, IconResolver *icons, QScreen *scr
     setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::Tool);
     setAttribute(Qt::WA_NativeWindow);
     setFocusPolicy(Qt::NoFocus);
-    setFixedHeight(kPanelHeight);
+    setFixedHeight(DumbarStyle::kPanelHeight);
+
+    QFont panelFont = font();
+    panelFont.setPixelSize(DumbarStyle::kFontSize);
+    setFont(panelFont);
 
     qCDebug(lcDumbar) << "creating panel"
                            << "screen=" << (m_screen ? m_screen->name() : QStringLiteral("<null>"))
                            << "geometry=" << (m_screen ? m_screen->geometry() : QRect());
 
     auto *layout = new QHBoxLayout(this);
-    layout->setContentsMargins(kPanelSpacing, 0, kPanelSpacing, 0);
-    layout->setSpacing(kPanelSpacing);
+    layout->setContentsMargins(DumbarStyle::kPanelSpacing, 0, DumbarStyle::kPanelSpacing, 0);
+    layout->setSpacing(DumbarStyle::kPanelSpacing);
 
     if (m_screen) {
         if (auto *nativeScreen = m_screen->nativeInterface<QNativeInterface::QWaylandScreen>())
@@ -69,11 +68,7 @@ Panel::Panel(ToplevelManager *toplevelManager, IconResolver *icons, QScreen *scr
     layout->addWidget(m_battery);
     layout->addWidget(m_clock);
 
-    setStyleSheet(QStringLiteral(
-        "QWidget#panel { background: #202020; color: #eeeeee; }"
-        "QToolButton { border: none; padding: 2px; color: #eeeeee; }"
-        "QToolButton:hover { background: rgba(255, 255, 255, 24); }"
-        "QLabel { color: #eeeeee; }"));
+    setStyleSheet(DumbarStyle::panelStyleSheet());
 
     configureLayerShell();
 }
@@ -102,8 +97,8 @@ void Panel::configureLayerShell()
     layerWindow->setAnchors(LayerShellQt::Window::Anchors(LayerShellQt::Window::AnchorTop)
                              | LayerShellQt::Window::AnchorLeft | LayerShellQt::Window::AnchorRight);
     layerWindow->setLayer(LayerShellQt::Window::LayerTop);
-    layerWindow->setExclusiveZone(kPanelHeight);
-    layerWindow->setDesiredSize(QSize(0, kPanelHeight));
+    layerWindow->setExclusiveZone(DumbarStyle::kPanelHeight);
+    layerWindow->setDesiredSize(QSize(0, DumbarStyle::kPanelHeight));
     layerWindow->setKeyboardInteractivity(LayerShellQt::Window::KeyboardInteractivityNone);
     layerWindow->setScope(QStringLiteral("dumbar"));
     if (m_screen)
@@ -112,6 +107,6 @@ void Panel::configureLayerShell()
     qCDebug(lcDumbar) << "layer-shell panel configured"
                            << "screen=" << (m_screen ? m_screen->name() : QStringLiteral("<null>"))
                            << "anchors=top,left,right"
-                           << "height=" << kPanelHeight
-                           << "exclusiveZone=" << kPanelHeight;
+                           << "height=" << DumbarStyle::kPanelHeight
+                           << "exclusiveZone=" << DumbarStyle::kPanelHeight;
 }
