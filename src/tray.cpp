@@ -2,23 +2,19 @@
 
 #include "dumbar.h"
 #include "layershell/layershellmenu.h"
-#include "trayitem.h"
-#include "layershell/layershelltooltip.h"
 
-#include <QDBusArgument>
+#include <QActionGroup>
 #include <QDBusAbstractAdaptor>
+#include <QDBusArgument>
 #include <QDBusConnectionInterface>
 #include <QDBusInterface>
 #include <QDBusMessage>
 #include <QDBusServiceWatcher>
 #include <QDBusVariant>
-#include <QActionGroup>
 #include <QHBoxLayout>
-#include <QMouseEvent>
+#include <QImage>
 #include <QMenu>
-#include <QToolButton>
 #include <QVariant>
-#include <QWheelEvent>
 
 #include <utility>
 
@@ -29,30 +25,22 @@ constexpr auto kWatcherPath = "/StatusNotifierWatcher";
 constexpr auto kWatcherInterface = "org.kde.StatusNotifierWatcher";
 constexpr auto kPropertiesInterface = "org.freedesktop.DBus.Properties";
 
-QVariant unbox(const QVariant &value)
+QVariant unwrap(const QVariant &value)
 {
-    if (value.metaType() == QMetaType::fromType<QDBusVariant>())
-        return value.value<QDBusVariant>().variant();
-    if (value.metaType() == QMetaType::fromType<QDBusArgument>())
-        return qdbus_cast<QVariant>(value.value<QDBusArgument>());
-    return value;
+    QVariant result = value;
+    while (result.metaType() == QMetaType::fromType<QDBusVariant>())
+        result = result.value<QDBusVariant>().variant();
+    return result;
 }
 
 QStringList stringListFromValue(const QVariant &value)
 {
-    const QVariant unboxed = unbox(value);
+    const QVariant unboxed = unwrap(value);
     if (unboxed.metaType() == QMetaType::fromType<QStringList>())
         return unboxed.toStringList();
     if (unboxed.metaType() == QMetaType::fromType<QDBusArgument>())
         return qdbus_cast<QStringList>(unboxed.value<QDBusArgument>());
     return {};
-}
-
-QVariant unwrapMenuVariant(const QVariant &value)
-{
-    if (value.metaType() == QMetaType::fromType<QDBusVariant>())
-        return value.value<QDBusVariant>().variant();
-    return value;
 }
 
 struct MenuNode
@@ -64,7 +52,7 @@ struct MenuNode
 
 QVariant menuProperty(const QVariantMap &properties, const char *name)
 {
-    return unwrapMenuVariant(properties.value(QString::fromLatin1(name)));
+    return unwrap(properties.value(QString::fromLatin1(name)));
 }
 
 QString menuString(const QVariantMap &properties, const char *name)
@@ -110,7 +98,7 @@ bool parseMenuNode(const QDBusArgument &argument, MenuNode *node, int depth, int
     while (!argument.atEnd()) {
         QVariant value;
         argument >> value;
-        value = unwrapMenuVariant(value);
+        value = unwrap(value);
         if (value.metaType() != QMetaType::fromType<QDBusArgument>()) {
             argument.endArray();
             argument.endStructure();
@@ -138,31 +126,13 @@ bool parseMenuLayout(const QDBusMessage &reply, MenuNode *root)
     if (!root || reply.type() == QDBusMessage::ErrorMessage || reply.arguments().size() < 2)
         return false;
 
-    QVariant value = unwrapMenuVariant(reply.arguments().at(1));
+    QVariant value = unwrap(reply.arguments().at(1));
     if (value.metaType() != QMetaType::fromType<QDBusArgument>())
         return false;
 
     const QDBusArgument argument = value.value<QDBusArgument>();
     int nodeCount = 0;
     return parseMenuNode(argument, root, 0, &nodeCount);
-}
-
-bool parseBooleanReply(const QDBusMessage &reply, bool *value)
-{
-    if (!value || reply.type() == QDBusMessage::ErrorMessage || reply.arguments().isEmpty())
-        return false;
-
-    QVariant argumentValue = unwrapMenuVariant(reply.arguments().constFirst());
-    if (argumentValue.metaType() != QMetaType::fromType<QDBusArgument>()) {
-        *value = argumentValue.toBool();
-        return true;
-    }
-
-    const QDBusArgument argument = argumentValue.value<QDBusArgument>();
-    argument.beginStructure();
-    argument >> *value;
-    argument.endStructure();
-    return true;
 }
 
 class StatusNotifierWatcherAdaptor final : public QDBusAbstractAdaptor
@@ -180,19 +150,19 @@ public:
     {
     }
 
-    QStringList registeredItems() const { return m_items; }
+    QStringList registeredItems() const { return m_tray->registeredItems(); }
     bool isHostRegistered() const { return m_hostRegistered; }
     int protocolVersion() const { return 0; }
 
     void removeService(const QString &service)
     {
-        qCDebug(lcDumbar) << "status notifier service unregistered" << "service=" << service;
-        const QStringList items = m_items;
+        qCDebug(lcDumbar) << "status notifier service unregistered"
+                          << "service=" << service;
+        const QStringList items = m_tray->registeredItems();
         for (const QString &item : items) {
             const QString itemService = item.section(QLatin1Char('/'), 0, 0);
             if (itemService != service)
                 continue;
-            m_items.removeAll(item);
             emit StatusNotifierItemUnregistered(item);
         }
     }
@@ -200,16 +170,13 @@ public:
 public slots:
     void RegisterStatusNotifierItem(const QString &service)
     {
+        const QStringList before = m_tray->registeredItems();
         const QString itemId = m_tray->registerItem(service);
-        if (itemId.isEmpty())
+        if (itemId.isEmpty() || before.contains(itemId))
             return;
         qCDebug(lcDumbar) << "status notifier item registered"
-                          << "registration=" << service
-                          << "item=" << itemId;
-        if (!m_items.contains(itemId)) {
-            m_items.append(itemId);
-            emit StatusNotifierItemRegistered(itemId);
-        }
+                          << "registration=" << service << "item=" << itemId;
+        emit StatusNotifierItemRegistered(itemId);
     }
 
     void RegisterStatusNotifierHost(const QString &service)
@@ -226,43 +193,14 @@ signals:
 
 private:
     Tray *m_tray = nullptr;
-    QStringList m_items;
     bool m_hostRegistered = false;
 };
 
 void populateMenu(QMenu *menu, const MenuNode &node, TrayItem *item);
 
-void refreshSubmenu(QMenu *menu, TrayItem *item, int itemId)
-{
-    if (!menu || !item)
-        return;
-
-    const QDBusMessage aboutToShow = item->callMenu(QStringLiteral("AboutToShow"), { itemId });
-    bool needsRefresh = false;
-    if (!parseBooleanReply(aboutToShow, &needsRefresh) || !needsRefresh)
-        return;
-
-    const QDBusMessage layout = item->callMenu(QStringLiteral("GetLayout"),
-                                                { itemId, -1, QStringList() });
-    MenuNode node;
-    if (!parseMenuLayout(layout, &node)) {
-        qCWarning(lcDumbar) << "could not refresh tray menu submenu"
-                            << "item=" << item->id()
-                            << "menuItem=" << itemId;
-        return;
-    }
-
-    menu->clear();
-    populateMenu(menu, node, item);
-}
-
 void populateMenu(QMenu *menu, const MenuNode &node, TrayItem *item)
 {
-    if (!menu || !item)
-        return;
-
     QActionGroup *radioGroup = nullptr;
-    const QPointer<TrayItem> itemGuard(item);
     for (const MenuNode &child : node.children) {
         if (!menuBool(child.properties, "visible", true))
             continue;
@@ -289,9 +227,8 @@ void populateMenu(QMenu *menu, const MenuNode &node, TrayItem *item)
             }
         }
 
-        const bool hasSubmenu = !child.children.isEmpty()
-                                || menuString(child.properties, "children-display")
-                                    == QLatin1String("submenu");
+        const bool hasSubmenu = !child.children.isEmpty() ||
+                                menuString(child.properties, "children-display") == QLatin1String("submenu");
         if (hasSubmenu) {
             auto *submenu = new QMenu(menu);
             submenu->setTitle(label);
@@ -301,95 +238,16 @@ void populateMenu(QMenu *menu, const MenuNode &node, TrayItem *item)
             action->setMenu(submenu);
             populateMenu(submenu, child, item);
 
-            QObject::connect(submenu, &QMenu::aboutToShow, submenu,
-                             [submenu, itemGuard, itemId = child.id] {
-                if (itemGuard)
-                    refreshSubmenu(submenu, itemGuard.data(), itemId);
-            });
         } else {
-            QObject::connect(action, &QAction::triggered, action, [itemGuard, itemId = child.id] {
-                if (itemGuard)
-                    itemGuard->menuEvent(itemId);
-            });
+            QObject::connect(action, &QAction::triggered, item,
+                             [item, itemId = child.id] { item->menuEvent(itemId); });
         }
     }
 }
 
-class TrayButton final : public QToolButton
-{
-public:
-    TrayButton(TrayItem *item, Tray *tray, QWidget *parent)
-        : QToolButton(parent)
-        , m_item(item)
-        , m_tray(tray)
-    {
-        setAutoRaise(true);
-        setFocusPolicy(Qt::NoFocus);
-        setIconSize(QSize(18, 18));
-        setFixedSize(22, 24);
-        setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
-        m_tooltip = new LayerShellTooltip(this, this);
-        refresh();
-    }
-
-    ~TrayButton() override
-    {
-        m_tooltip->close();
-    }
-
-    void refresh()
-    {
-        setIcon(m_item->icon());
-        // Native Qt tooltips are independent top-level surfaces on Wayland.
-        // The button owns a delayed tooltip so it can attach it to the panel's
-        // layer-shell surface and position it in panel-local coordinates.
-        setToolTip(QString());
-        setVisible(!m_item->isPassive());
-        m_tooltip->setText(m_item->isPassive() ? QString() : m_item->toolTip());
-    }
-
-protected:
-    void mousePressEvent(QMouseEvent *event) override
-    {
-        const QPoint point = event->globalPosition().toPoint();
-        if (event->button() == Qt::LeftButton) {
-            if (m_item->itemIsMenu() && m_item->hasMenu()) {
-                m_tooltip->close();
-                m_tray->showPopup(m_item, this);
-            } else {
-                m_item->activate(point.x(), point.y());
-            }
-        } else if (event->button() == Qt::MiddleButton) {
-            m_item->secondaryActivate(point.x(), point.y());
-        } else if (event->button() == Qt::RightButton) {
-            if (m_item->hasMenu()) {
-                m_tooltip->close();
-                m_tray->showPopup(m_item, this);
-            } else {
-                m_item->contextMenu(point.x(), point.y());
-            }
-        }
-        event->accept();
-    }
-
-    void wheelEvent(QWheelEvent *event) override
-    {
-        const int delta = event->angleDelta().y();
-        if (delta != 0)
-            m_item->scroll(delta, QStringLiteral("vertical"));
-        event->accept();
-    }
-
-private:
-    TrayItem *m_item = nullptr;
-    Tray *m_tray = nullptr;
-    LayerShellTooltip *m_tooltip = nullptr;
-};
 }
 
-Tray::Tray(QWidget *parent)
-    : QWidget(parent)
-    , m_bus(QDBusConnection::sessionBus())
+Tray::Tray(QWidget *parent) : QWidget(parent), m_bus(QDBusConnection::sessionBus())
 {
     m_layout = new QHBoxLayout(this);
     m_layout->setContentsMargins(0, 0, 0, 0);
@@ -397,11 +255,11 @@ Tray::Tray(QWidget *parent)
     setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Expanding);
     hide();
 
-    qCDebug(lcDumbar) << "creating system tray" << "dbusConnected=" << m_bus.isConnected();
+    qCDebug(lcDumbar) << "creating system tray"
+                      << "dbusConnected=" << m_bus.isConnected();
 
     if (!m_bus.isConnected()) {
         qWarning("dumbar: session D-Bus is unavailable; system tray disabled");
-        m_warned = true;
         return;
     }
 
@@ -410,27 +268,28 @@ Tray::Tray(QWidget *parent)
     m_serviceWatcher->setWatchMode(QDBusServiceWatcher::WatchForUnregistration);
     connect(m_serviceWatcher, &QDBusServiceWatcher::serviceUnregistered, this, &Tray::serviceUnregistered);
 
-    const bool watcherExists = m_bus.interface()
-        && m_bus.interface()->isServiceRegistered(QString::fromLatin1(kWatcherService)).value();
+    const bool watcherExists =
+        m_bus.interface() &&
+        m_bus.interface()->isServiceRegistered(QString::fromLatin1(kWatcherService)).value();
     if (watcherExists) {
         connectToWatcher();
     } else if (m_bus.registerService(QString::fromLatin1(kWatcherService))) {
         m_ownsWatcher = true;
         setupLocalWatcher();
-    } else if (m_bus.interface()
-               && m_bus.interface()->isServiceRegistered(QString::fromLatin1(kWatcherService)).value()) {
+    } else if (m_bus.interface() &&
+               m_bus.interface()->isServiceRegistered(QString::fromLatin1(kWatcherService)).value()) {
         connectToWatcher();
     } else {
-        qWarning("dumbar: could not provide or find a StatusNotifierWatcher; system tray disabled");
-        m_warned = true;
+        qWarning("dumbar: could not provide or find a StatusNotifierWatcher; "
+                 "system tray disabled");
     }
 }
 
 Tray::~Tray()
 {
-    qCDebug(lcDumbar) << "destroying system tray" << "itemCount=" << m_items.size();
-    if (m_popup)
-        m_popup->close();
+    qCDebug(lcDumbar) << "destroying system tray"
+                      << "itemCount=" << m_items.size();
+    closePopup();
     if (m_ownsWatcher) {
         m_bus.unregisterObject(QString::fromLatin1(kWatcherPath));
         m_bus.unregisterService(QString::fromLatin1(kWatcherService));
@@ -468,29 +327,24 @@ QString Tray::registerItem(const QString &registration)
     }
 
     qCDebug(lcDumbar) << "creating tray item"
-                      << "item=" << itemId
-                      << "service=" << service
-                      << "path=" << path;
+                      << "item=" << itemId << "service=" << service << "path=" << path;
     auto *item = new TrayItem(m_bus, service, path, this);
     if (!item->isValid()) {
-        qCDebug(lcDumbar) << "tray item is invalid and will be destroyed" << "item=" << itemId;
+        qCDebug(lcDumbar) << "tray item is invalid and will be destroyed"
+                          << "item=" << itemId;
         item->deleteLater();
         return {};
     }
 
     m_items.insert(itemId, item);
     m_serviceWatcher->addWatchedService(service);
-    connect(item, &TrayItem::changed, this, &Tray::itemChanged);
-    connect(item, &TrayItem::invalid, this, &Tray::itemInvalid);
-
-    auto *button = new TrayButton(item, this, this);
-    m_buttons.insert(itemId, button);
-    m_layout->addWidget(button);
+    connect(item, &TrayItem::updated, this, &Tray::updateVisibility);
+    connect(item, &TrayItem::invalid, this, [this, item] { removeItem(item->id()); });
+    connect(item, &TrayItem::menuRequested, this, [this, item] { showPopup(item); });
+    m_layout->addWidget(item);
     updateVisibility();
     qCDebug(lcDumbar) << "tray item created"
-                      << "item=" << itemId
-                      << "status=" << item->status()
-                      << "passive=" << item->isPassive()
+                      << "item=" << itemId << "status=" << item->status() << "passive=" << item->isPassive()
                       << "itemCount=" << m_items.size();
     return itemId;
 }
@@ -502,7 +356,8 @@ void Tray::unregisterItem(const QString &itemId)
 
 void Tray::removeItemsForService(const QString &service)
 {
-    qCDebug(lcDumbar) << "removing tray items for service" << "service=" << service;
+    qCDebug(lcDumbar) << "removing tray items for service"
+                      << "service=" << service;
     QStringList itemIds;
     for (auto it = m_items.cbegin(); it != m_items.cend(); ++it) {
         if (it.value()->service() == service)
@@ -520,9 +375,9 @@ QStringList Tray::registeredItems() const
     return m_items.keys();
 }
 
-void Tray::showPopup(TrayItem *item, QWidget *button)
+void Tray::showPopup(TrayItem *item)
 {
-    if (!item || !button || !item->hasMenu())
+    if (!item || !item->hasMenu())
         return;
 
     if (m_popup) {
@@ -537,9 +392,8 @@ void Tray::showPopup(TrayItem *item, QWidget *button)
     // Ask the item whether the menu needs a refresh before obtaining the
     // layout.  A fresh layout on every open keeps check states and dynamic
     // tray menus in sync without keeping a stale QWidget tree around.
-    item->callMenu(QStringLiteral("AboutToShow"), { 0 });
-    const QDBusMessage layout = item->callMenu(QStringLiteral("GetLayout"),
-                                                { 0, -1, QStringList() });
+    item->callMenu(QStringLiteral("AboutToShow"), {0});
+    const QDBusMessage layout = item->callMenu(QStringLiteral("GetLayout"), {0, -1, QStringList()});
     MenuNode root;
     if (!parseMenuLayout(layout, &root)) {
         qCWarning(lcDumbar) << "could not load tray item popup menu"
@@ -554,7 +408,7 @@ void Tray::showPopup(TrayItem *item, QWidget *button)
         return;
     }
 
-    if (!menu->popupFor(button)) {
+    if (!menu->popupFor(item)) {
         menu->deleteLater();
         return;
     }
@@ -569,32 +423,7 @@ void Tray::showPopup(TrayItem *item, QWidget *button)
     });
 
     qCDebug(lcDumbar) << "showing tray popup"
-                      << "item=" << item->id()
-                      << "actionCount=" << menu->actions().size();
-}
-
-void Tray::itemChanged(TrayItem *item)
-{
-    for (auto it = m_items.cbegin(); it != m_items.cend(); ++it) {
-        if (it.value() != item)
-            continue;
-        if (auto *button = static_cast<TrayButton *>(m_buttons.value(it.key()))) {
-            button->refresh();
-        }
-        updateVisibility();
-        return;
-    }
-}
-
-void Tray::itemInvalid(TrayItem *item)
-{
-    for (auto it = m_items.cbegin(); it != m_items.cend(); ++it) {
-        if (it.value() == item) {
-            qCDebug(lcDumbar) << "tray item became invalid" << "item=" << it.key();
-            removeItem(it.key());
-            return;
-        }
-    }
+                      << "item=" << item->id() << "actionCount=" << menu->actions().size();
 }
 
 void Tray::serviceUnregistered(const QString &service)
@@ -606,23 +435,15 @@ void Tray::serviceUnregistered(const QString &service)
 
 void Tray::connectToWatcher()
 {
-    m_bus.connect(QString::fromLatin1(kWatcherService),
-                  QString::fromLatin1(kWatcherPath),
-                  QString::fromLatin1(kWatcherInterface),
-                  QStringLiteral("StatusNotifierItemRegistered"),
-                  this,
-                  SLOT(registerItem(QString)));
-    m_bus.connect(QString::fromLatin1(kWatcherService),
-                  QString::fromLatin1(kWatcherPath),
-                  QString::fromLatin1(kWatcherInterface),
-                  QStringLiteral("StatusNotifierItemUnregistered"),
-                  this,
-                  SLOT(unregisterItem(QString)));
+    m_bus.connect(QString::fromLatin1(kWatcherService), QString::fromLatin1(kWatcherPath),
+                  QString::fromLatin1(kWatcherInterface), QStringLiteral("StatusNotifierItemRegistered"),
+                  this, SLOT(registerItem(QString)));
+    m_bus.connect(QString::fromLatin1(kWatcherService), QString::fromLatin1(kWatcherPath),
+                  QString::fromLatin1(kWatcherInterface), QStringLiteral("StatusNotifierItemUnregistered"),
+                  this, SLOT(unregisterItem(QString)));
 
-    QDBusInterface watcher(QString::fromLatin1(kWatcherService),
-                           QString::fromLatin1(kWatcherPath),
-                           QString::fromLatin1(kWatcherInterface),
-                           m_bus);
+    QDBusInterface watcher(QString::fromLatin1(kWatcherService), QString::fromLatin1(kWatcherPath),
+                           QString::fromLatin1(kWatcherInterface), m_bus);
     watcher.call(QStringLiteral("RegisterStatusNotifierHost"), m_bus.baseService());
     loadRegisteredItems();
 }
@@ -642,12 +463,9 @@ void Tray::setupLocalWatcher()
 
 void Tray::loadRegisteredItems()
 {
-    QDBusInterface properties(QString::fromLatin1(kWatcherService),
-                              QString::fromLatin1(kWatcherPath),
-                              QString::fromLatin1(kPropertiesInterface),
-                              m_bus);
-    const QDBusMessage reply = properties.call(QStringLiteral("Get"),
-                                               QString::fromLatin1(kWatcherInterface),
+    QDBusInterface properties(QString::fromLatin1(kWatcherService), QString::fromLatin1(kWatcherPath),
+                              QString::fromLatin1(kPropertiesInterface), m_bus);
+    const QDBusMessage reply = properties.call(QStringLiteral("Get"), QString::fromLatin1(kWatcherInterface),
                                                QStringLiteral("RegisteredStatusNotifierItems"));
     if (reply.type() == QDBusMessage::ErrorMessage || reply.arguments().isEmpty())
         return;
@@ -658,26 +476,27 @@ void Tray::loadRegisteredItems()
 void Tray::removeItem(const QString &itemId)
 {
     TrayItem *item = m_items.take(itemId);
-    QWidget *button = m_buttons.take(itemId);
-    if (item || button) {
+    if (item) {
         qCDebug(lcDumbar) << "destroying tray item"
-                          << "item=" << itemId
-                          << "status=" << (item ? item->status() : QStringLiteral("<unknown>"))
+                          << "item=" << itemId << "status=" << item->status()
                           << "remaining=" << m_items.size();
     }
     if (item && m_popupItem == item) {
-        if (m_popup)
-            m_popup->close();
-        m_popup = nullptr;
-        m_popupItem = nullptr;
+        closePopup();
     }
-    if (button) {
-        m_layout->removeWidget(button);
-        button->deleteLater();
-    }
-    if (item)
+    if (item) {
+        m_layout->removeWidget(item);
         item->deleteLater();
+    }
     updateVisibility();
+}
+
+void Tray::closePopup()
+{
+    if (m_popup)
+        m_popup->close();
+    m_popup = nullptr;
+    m_popupItem = nullptr;
 }
 
 void Tray::updateVisibility()

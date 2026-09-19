@@ -1,34 +1,26 @@
 #include "trayitem.h"
 
-#include "dumbar.h"
+#include "layershell/layershelltooltip.h"
 
 #include <QDBusArgument>
 #include <QDBusInterface>
-#include <QDBusMessage>
 #include <QDBusObjectPath>
 #include <QDBusVariant>
 #include <QDateTime>
 #include <QImage>
-#include <QPainter>
+#include <QMouseEvent>
+#include <QWheelEvent>
 #include <QtEndian>
 
 #include <limits>
+#include <utility>
 
 namespace
 {
 constexpr auto kItemInterface = "org.kde.StatusNotifierItem";
 constexpr auto kPropertiesInterface = "org.freedesktop.DBus.Properties";
 
-QVariant unbox(const QVariant &value)
-{
-    if (value.metaType() == QMetaType::fromType<QDBusVariant>())
-        return value.value<QDBusVariant>().variant();
-    if (value.metaType() == QMetaType::fromType<QDBusArgument>())
-        return qdbus_cast<QVariant>(value.value<QDBusArgument>());
-    return value;
-}
-
-QVariant unwrapVariants(const QVariant &value)
+QVariant unwrap(const QVariant &value)
 {
     QVariant result = value;
     while (result.metaType() == QMetaType::fromType<QDBusVariant>())
@@ -36,11 +28,20 @@ QVariant unwrapVariants(const QVariant &value)
     return result;
 }
 
+QVariant property(const QVariantMap &properties, const char *name)
+{
+    QVariant result = unwrap(properties.value(QString::fromLatin1(name)));
+    if (result.metaType() == QMetaType::fromType<QDBusArgument>())
+        result = qdbus_cast<QVariant>(result.value<QDBusArgument>());
+    return result;
+}
+
 QVariantMap propertiesFromReply(const QDBusMessage &reply)
 {
     if (reply.type() == QDBusMessage::ErrorMessage || reply.arguments().isEmpty())
         return {};
-    const QVariant value = reply.arguments().constFirst();
+
+    const QVariant value = unwrap(reply.arguments().constFirst());
     if (value.metaType() == QMetaType::fromType<QVariantMap>())
         return value.toMap();
     if (value.metaType() == QMetaType::fromType<QDBusArgument>())
@@ -48,14 +49,14 @@ QVariantMap propertiesFromReply(const QDBusMessage &reply)
     return {};
 }
 
-QImage imageFromPixmapValue(const QVariant &value)
+QImage imageFromPixmap(const QVariant &value)
 {
-    const QVariant unboxed = unbox(value);
+    const QVariant unboxed = unwrap(value);
     if (unboxed.metaType() != QMetaType::fromType<QDBusArgument>())
         return {};
 
     const QDBusArgument argument = unboxed.value<QDBusArgument>();
-    QImage bestImage;
+    QImage result;
     int bestScore = std::numeric_limits<int>::max();
     argument.beginArray();
     while (!argument.atEnd()) {
@@ -66,147 +67,112 @@ QImage imageFromPixmapValue(const QVariant &value)
         argument >> width >> height >> pixels;
         argument.endStructure();
 
-        if (width > 0 && height > 0 && pixels.size() >= width * height * 4) {
-            const int score = qAbs(width - 18) + qAbs(height - 18);
-            if (score < bestScore) {
-                QImage image(width, height, QImage::Format_ARGB32);
-                for (int y = 0; y < height; ++y) {
-                    for (int x = 0; x < width; ++x) {
-                        const auto *pixel = reinterpret_cast<const uchar *>(pixels.constData())
-                            + (static_cast<qsizetype>(y) * width + x) * 4;
-                        image.setPixel(x, y, qFromBigEndian<quint32>(pixel));
-                    }
-                }
-                bestImage = image;
-                bestScore = score;
+        if (width <= 0 || height <= 0 || pixels.size() < width * height * 4)
+            continue;
+
+        const int score = qAbs(width - 18) + qAbs(height - 18);
+        if (score >= bestScore)
+            continue;
+
+        QImage image(width, height, QImage::Format_ARGB32);
+        for (int y = 0; y < height; ++y) {
+            for (int x = 0; x < width; ++x) {
+                const auto *pixel = reinterpret_cast<const uchar *>(pixels.constData()) +
+                                    (static_cast<qsizetype>(y) * width + x) * 4;
+                image.setPixel(x, y, qFromBigEndian<quint32>(pixel));
             }
         }
+        result = image;
+        bestScore = score;
     }
     argument.endArray();
-    return bestImage;
+    return result;
 }
 
-QString toolTipFromValue(const QVariant &value)
+QIcon icon(const QString &name, const QVariant &pixmap)
 {
-    // ToolTip is a structured SNI property.  Only unwrap the D-Bus variant
-    // wrapper here; treating the structure itself as a variant loses it.
-    const QVariant unboxed = unwrapVariants(value);
+    QIcon result = QIcon::fromTheme(name);
+    if (result.isNull()) {
+        const QImage image = imageFromPixmap(pixmap);
+        if (!image.isNull())
+            result = QIcon(QPixmap::fromImage(image));
+    }
+    return result;
+}
+
+QString toolTip(const QVariant &value)
+{
+    const QVariant unboxed = unwrap(value);
     if (unboxed.metaType() != QMetaType::fromType<QDBusArgument>())
         return {};
 
     const QDBusArgument argument = unboxed.value<QDBusArgument>();
-    QString iconName;
     QString title;
     QString description;
     argument.beginStructure();
-    argument >> iconName;
+    QString ignoredIconName;
+    argument >> ignoredIconName;
     argument.beginArray();
     while (!argument.atEnd()) {
         argument.beginStructure();
         int width = 0;
         int height = 0;
-        QByteArray pixels;
-        argument >> width >> height >> pixels;
+        QByteArray ignoredPixels;
+        argument >> width >> height >> ignoredPixels;
         argument.endStructure();
     }
     argument.endArray();
     argument >> title >> description;
     argument.endStructure();
-    Q_UNUSED(iconName)
+    Q_UNUSED(ignoredIconName)
+
     if (title.isEmpty())
         return description;
     if (description.isEmpty())
         return title;
-    return title + QStringLiteral("\n") + description;
+    return title + QLatin1Char('\n') + description;
 }
 
-QString objectPathFromValue(const QVariant &value)
+QString objectPath(const QVariant &value)
 {
-    const QVariant unboxed = unbox(value);
+    QVariant unboxed = unwrap(value);
+    if (unboxed.metaType() == QMetaType::fromType<QDBusArgument>())
+        unboxed = qdbus_cast<QVariant>(unboxed.value<QDBusArgument>());
     if (unboxed.metaType() == QMetaType::fromType<QDBusObjectPath>())
         return unboxed.value<QDBusObjectPath>().path();
     return unboxed.toString();
 }
-
-QIcon iconFromValues(const QString &name, const QVariant &pixmap)
-{
-    QIcon icon = QIcon::fromTheme(name);
-    if (!icon.isNull())
-        return icon;
-    const QImage image = imageFromPixmapValue(pixmap);
-    if (!image.isNull())
-        return QIcon(QPixmap::fromImage(image));
-    return {};
 }
 
-}
-
-TrayItem::TrayItem(const QDBusConnection &bus,
-                   const QString &service,
-                   const QString &path,
-                   QObject *parent)
-    : QObject(parent)
-    , m_bus(bus)
-    , m_service(service)
-    , m_path(path)
+TrayItem::TrayItem(const QDBusConnection &bus, QString service, QString path, QWidget *parent)
+    : QToolButton(parent), m_bus(bus), m_service(std::move(service)), m_path(std::move(path))
 {
-    qCDebug(lcDumbar) << "constructing tray item"
-                      << "service=" << m_service
-                      << "path=" << m_path;
-    m_bus.connect(m_service,
-                  m_path,
-                  QString::fromLatin1(kItemInterface),
-                  QStringLiteral("NewIcon"),
-                  this,
-                  SLOT(refresh()));
-    m_bus.connect(m_service,
-                  m_path,
-                  QString::fromLatin1(kItemInterface),
-                  QStringLiteral("NewAttentionIcon"),
-                  this,
-                  SLOT(refresh()));
-    m_bus.connect(m_service,
-                  m_path,
-                  QString::fromLatin1(kItemInterface),
-                  QStringLiteral("NewStatus"),
-                  this,
-                  SLOT(refresh()));
-    m_bus.connect(m_service,
-                  m_path,
-                  QString::fromLatin1(kItemInterface),
-                  QStringLiteral("NewToolTip"),
-                  this,
-                  SLOT(refresh()));
-    m_bus.connect(m_service,
-                  m_path,
-                  QString::fromLatin1(kItemInterface),
-                  QStringLiteral("NewTitle"),
-                  this,
-                  SLOT(refresh()));
+    setAutoRaise(true);
+    setFocusPolicy(Qt::NoFocus);
+    setIconSize(QSize(18, 18));
+    setFixedSize(22, 24);
+    setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
+    setToolTip(QString());
+    m_tooltip = new LayerShellTooltip(this, this);
+
+    for (const auto signal : {"NewIcon", "NewAttentionIcon", "NewStatus", "NewToolTip", "NewTitle"})
+        m_bus.connect(m_service, m_path, QString::fromLatin1(kItemInterface), signal, this, SLOT(refresh()));
     refresh();
-    qCDebug(lcDumbar) << "tray item initialized"
-                      << "item=" << id()
-                      << "valid=" << m_valid
-                      << "status=" << m_status
-                      << "iconResolved=" << !m_icon.isNull();
 }
 
 TrayItem::~TrayItem()
 {
-    qCDebug(lcDumbar) << "tray item destroyed" << "item=" << id();
+    m_tooltip->close();
 }
 
 void TrayItem::refresh()
 {
-    QDBusInterface properties(m_service,
-                              m_path,
-                              QString::fromLatin1(kPropertiesInterface),
-                              m_bus);
+    QDBusInterface properties(m_service, m_path, QString::fromLatin1(kPropertiesInterface), m_bus);
     const QDBusMessage reply = properties.call(QStringLiteral("GetAll"), QString::fromLatin1(kItemInterface));
     const QVariantMap values = propertiesFromReply(reply);
     if (values.isEmpty()) {
         m_valid = false;
-        emit invalid(this);
+        emit invalid();
         return;
     }
     applyProperties(values);
@@ -214,85 +180,40 @@ void TrayItem::refresh()
 
 void TrayItem::applyProperties(const QVariantMap &properties)
 {
-    m_status = unbox(properties.value(QStringLiteral("Status"))).toString();
+    m_status = ::property(properties, "Status").toString();
     if (m_status.isEmpty())
         m_status = QStringLiteral("Active");
 
-    const QString iconName = unbox(properties.value(QStringLiteral("IconName"))).toString();
-    const QString attentionIconName = unbox(properties.value(QStringLiteral("AttentionIconName"))).toString();
+    const QString iconName = ::property(properties, "IconName").toString();
+    const QString attentionIconName = ::property(properties, "AttentionIconName").toString();
     const QVariant iconPixmap = properties.value(QStringLiteral("IconPixmap"));
     const QVariant attentionPixmap = properties.value(QStringLiteral("AttentionIconPixmap"));
+    QIcon itemIcon =
+        m_status == QLatin1String("NeedsAttention") ? ::icon(attentionIconName, attentionPixmap) : QIcon();
+    if (itemIcon.isNull())
+        itemIcon = ::icon(iconName, iconPixmap);
+    if (itemIcon.isNull())
+        itemIcon = QIcon::fromTheme(QStringLiteral("application-x-executable"));
+    setIcon(itemIcon);
 
-    if (m_status == QLatin1String("NeedsAttention")) {
-        m_icon = iconFromValues(attentionIconName, attentionPixmap);
-        if (m_icon.isNull())
-            m_icon = iconFromValues(iconName, iconPixmap);
-    } else {
-        m_icon = iconFromValues(iconName, iconPixmap);
-    }
+    QString tip = ::toolTip(properties.value(QStringLiteral("ToolTip")));
+    if (tip.isEmpty())
+        tip = ::property(properties, "IconAccessibleDesc").toString();
+    if (tip.isEmpty())
+        tip = ::property(properties, "Title").toString();
+    m_tooltip->setText(isPassive() ? QString() : tip);
 
-    if (m_icon.isNull())
-        m_icon = QIcon::fromTheme(QStringLiteral("application-x-executable"));
-
-    qCDebug(lcDumbar) << "tray item icon"
-                      << "item=" << id()
-                      << "status=" << m_status
-                      << "iconName=" << iconName
-                      << "attentionIconName=" << attentionIconName
-                      << "iconPixmapValid=" << iconPixmap.isValid()
-                      << "attentionPixmapValid=" << attentionPixmap.isValid()
-                      << "theme=" << QIcon::themeName()
-                      << "resolved=" << !m_icon.isNull();
-
-    if (m_icon.isNull()) {
-        if (!m_missingIconWarningIssued) {
-            qCWarning(lcDumbar) << "tray item has no usable icon"
-                                << "item=" << id()
-                                << "iconName=" << iconName
-                                << "attentionIconName=" << attentionIconName
-                                << "iconPixmapValid=" << iconPixmap.isValid()
-                                << "attentionPixmapValid=" << attentionPixmap.isValid()
-                                << "theme=" << QIcon::themeName();
-            m_missingIconWarningIssued = true;
-        }
-    } else if (m_missingIconWarningIssued) {
-        qCDebug(lcDumbar) << "tray item icon became available" << "item=" << id();
-        m_missingIconWarningIssued = false;
-    }
-
-    m_toolTip = toolTipFromValue(properties.value(QStringLiteral("ToolTip")));
-    if (m_toolTip.isEmpty())
-        m_toolTip = unbox(properties.value(QStringLiteral("IconAccessibleDesc"))).toString();
-    if (m_toolTip.isEmpty())
-        m_toolTip = unbox(properties.value(QStringLiteral("Title"))).toString();
-    m_itemIsMenu = unbox(properties.value(QStringLiteral("ItemIsMenu"))).toBool();
-    m_menuPath = objectPathFromValue(properties.value(QStringLiteral("Menu")));
+    m_itemIsMenu = ::property(properties, "ItemIsMenu").toBool();
+    m_menuPath = objectPath(properties.value(QStringLiteral("Menu")));
     m_valid = true;
-    emit changed(this);
+    setVisible(!isPassive());
+    emit updated();
 }
 
-void TrayItem::activate(int x, int y)
+void TrayItem::invoke(const QString &method, const QVariantList &arguments) const
 {
     QDBusInterface item(m_service, m_path, QString::fromLatin1(kItemInterface), m_bus);
-    item.call(QStringLiteral("Activate"), x, y);
-}
-
-void TrayItem::secondaryActivate(int x, int y)
-{
-    QDBusInterface item(m_service, m_path, QString::fromLatin1(kItemInterface), m_bus);
-    item.call(QStringLiteral("SecondaryActivate"), x, y);
-}
-
-void TrayItem::scroll(int delta, const QString &orientation)
-{
-    QDBusInterface item(m_service, m_path, QString::fromLatin1(kItemInterface), m_bus);
-    item.call(QStringLiteral("Scroll"), delta, orientation);
-}
-
-void TrayItem::contextMenu(int x, int y)
-{
-    QDBusInterface item(m_service, m_path, QString::fromLatin1(kItemInterface), m_bus);
-    item.call(QStringLiteral("ContextMenu"), x, y);
+    item.callWithArgumentList(QDBus::AutoDetect, method, arguments);
 }
 
 QDBusMessage TrayItem::callMenu(const QString &method, const QVariantList &arguments) const
@@ -307,15 +228,35 @@ QDBusMessage TrayItem::callMenu(const QString &method, const QVariantList &argum
 
 void TrayItem::menuEvent(int itemId) const
 {
-    // com.canonical.dbusmenu uses the same millisecond timestamp convention
-    // as a native pointer event.  The protocol field is uint32 and therefore
-    // intentionally wraps just like the toolkit event timestamps do.
     const quint32 timestamp = static_cast<quint32>(QDateTime::currentMSecsSinceEpoch());
-    const QVariantList arguments {
-        itemId,
-        QStringLiteral("clicked"),
-        QVariant::fromValue(QDBusVariant(QVariant(0))),
-        timestamp,
-    };
-    callMenu(QStringLiteral("Event"), arguments);
+    callMenu(QStringLiteral("Event"), {
+                                          itemId,
+                                          QStringLiteral("clicked"),
+                                          QVariant::fromValue(QDBusVariant(QVariant(0))),
+                                          timestamp,
+                                      });
+}
+
+void TrayItem::mousePressEvent(QMouseEvent *event)
+{
+    const QPoint point = event->globalPosition().toPoint();
+    const auto button = event->button();
+    if ((button == Qt::LeftButton && m_itemIsMenu && hasMenu()) || (button == Qt::RightButton && hasMenu())) {
+        m_tooltip->close();
+        emit menuRequested();
+    } else if (button == Qt::LeftButton) {
+        invoke(QStringLiteral("Activate"), {point.x(), point.y()});
+    } else if (button == Qt::MiddleButton) {
+        invoke(QStringLiteral("SecondaryActivate"), {point.x(), point.y()});
+    } else if (button == Qt::RightButton) {
+        invoke(QStringLiteral("ContextMenu"), {point.x(), point.y()});
+    }
+    event->accept();
+}
+
+void TrayItem::wheelEvent(QWheelEvent *event)
+{
+    if (const int delta = event->angleDelta().y())
+        invoke(QStringLiteral("Scroll"), {delta, QStringLiteral("vertical")});
+    event->accept();
 }

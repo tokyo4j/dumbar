@@ -2,36 +2,24 @@
 
 #include <QDBusConnection>
 #include <QDBusMessage>
-#include <QIcon>
-#include <QObject>
-#include <QVariantList>
+#include <QToolButton>
 
-class TrayItem final : public QObject
+class LayerShellTooltip;
+
+class TrayItem final : public QToolButton
 {
     Q_OBJECT
 
 public:
-    TrayItem(const QDBusConnection &bus,
-             const QString &service,
-             const QString &path,
-             QObject *parent = nullptr);
+    TrayItem(const QDBusConnection &bus, QString service, QString path, QWidget *parent = nullptr);
     ~TrayItem() override;
 
     QString id() const { return m_service + m_path; }
     QString service() const { return m_service; }
-    QString path() const { return m_path; }
     QString status() const { return m_status; }
-    QString toolTip() const { return m_toolTip; }
-    QIcon icon() const { return m_icon; }
-    bool itemIsMenu() const { return m_itemIsMenu; }
     bool hasMenu() const { return !m_menuPath.isEmpty(); }
     bool isValid() const { return m_valid; }
     bool isPassive() const { return m_status == QLatin1String("Passive"); }
-
-    void activate(int x, int y);
-    void secondaryActivate(int x, int y);
-    void scroll(int delta, const QString &orientation);
-    void contextMenu(int x, int y);
 
     QDBusMessage callMenu(const QString &method, const QVariantList &arguments = {}) const;
     void menuEvent(int itemId) const;
@@ -40,20 +28,24 @@ public slots:
     void refresh();
 
 signals:
-    void changed(TrayItem *item);
-    void invalid(TrayItem *item);
+    void updated();
+    void invalid();
+    void menuRequested();
+
+protected:
+    void mousePressEvent(QMouseEvent *event) override;
+    void wheelEvent(QWheelEvent *event) override;
 
 private:
+    void invoke(const QString &method, const QVariantList &arguments = {}) const;
     void applyProperties(const QVariantMap &properties);
 
     QDBusConnection m_bus;
     QString m_service;
     QString m_path;
     QString m_status;
-    QString m_toolTip;
-    QIcon m_icon;
-    bool m_itemIsMenu = false;
     QString m_menuPath;
+    bool m_itemIsMenu = false;
     bool m_valid = false;
-    bool m_missingIconWarningIssued = false;
+    LayerShellTooltip *m_tooltip = nullptr;
 };
