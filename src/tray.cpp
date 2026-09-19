@@ -13,7 +13,6 @@
 #include <QDBusServiceWatcher>
 #include <QDBusVariant>
 #include <QActionGroup>
-#include <QEnterEvent>
 #include <QHBoxLayout>
 #include <QMouseEvent>
 #include <QMenu>
@@ -324,22 +323,27 @@ public:
     {
         setAutoRaise(true);
         setFocusPolicy(Qt::NoFocus);
-        setAttribute(Qt::WA_Hover);
-        setMouseTracking(true);
         setIconSize(QSize(18, 18));
         setFixedSize(22, 24);
         setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
+        m_tooltip = new LayerShellTooltip(this, this);
         refresh();
+    }
+
+    ~TrayButton() override
+    {
+        m_tooltip->close();
     }
 
     void refresh()
     {
         setIcon(m_item->icon());
         // Native Qt tooltips are independent top-level surfaces on Wayland.
-        // Tray owns a delayed tooltip so it can attach it to the panel's
+        // The button owns a delayed tooltip so it can attach it to the panel's
         // layer-shell surface and position it in panel-local coordinates.
         setToolTip(QString());
         setVisible(!m_item->isPassive());
+        m_tooltip->setText(m_item->isPassive() ? QString() : m_item->toolTip());
     }
 
 protected:
@@ -347,17 +351,21 @@ protected:
     {
         const QPoint point = event->globalPosition().toPoint();
         if (event->button() == Qt::LeftButton) {
-            if (m_item->itemIsMenu() && m_item->hasMenu())
+            if (m_item->itemIsMenu() && m_item->hasMenu()) {
+                m_tooltip->close();
                 m_tray->showPopup(m_item, this);
-            else
+            } else {
                 m_item->activate(point.x(), point.y());
+            }
         } else if (event->button() == Qt::MiddleButton) {
             m_item->secondaryActivate(point.x(), point.y());
         } else if (event->button() == Qt::RightButton) {
-            if (m_item->hasMenu())
+            if (m_item->hasMenu()) {
+                m_tooltip->close();
                 m_tray->showPopup(m_item, this);
-            else
+            } else {
                 m_item->contextMenu(point.x(), point.y());
+            }
         }
         event->accept();
     }
@@ -370,24 +378,10 @@ protected:
         event->accept();
     }
 
-    void enterEvent(QEnterEvent *event) override
-    {
-        QToolButton::enterEvent(event);
-        qCDebug(lcDumbar) << "tray tooltip hover enter"
-                          << "item=" << m_item->id()
-                          << "text=" << m_item->toolTip();
-        m_tray->showTooltip(this, m_item->toolTip());
-    }
-
-    void leaveEvent(QEvent *event) override
-    {
-        m_tray->hideTooltip(this);
-        QToolButton::leaveEvent(event);
-    }
-
 private:
     TrayItem *m_item = nullptr;
     Tray *m_tray = nullptr;
+    LayerShellTooltip *m_tooltip = nullptr;
 };
 }
 
@@ -400,7 +394,6 @@ Tray::Tray(QWidget *parent)
     m_layout->setSpacing(1);
     setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Expanding);
     hide();
-    m_tooltip = new LayerShellTooltip(this);
 
     qCDebug(lcDumbar) << "creating system tray" << "dbusConnected=" << m_bus.isConnected();
 
@@ -434,7 +427,6 @@ Tray::Tray(QWidget *parent)
 Tray::~Tray()
 {
     qCDebug(lcDumbar) << "destroying system tray" << "itemCount=" << m_items.size();
-    m_tooltip->close();
     if (m_popup)
         m_popup->close();
     if (m_ownsWatcher) {
@@ -512,22 +504,11 @@ QStringList Tray::registeredItems() const
     return m_items.keys();
 }
 
-void Tray::showTooltip(QWidget *button, const QString &text)
-{
-    m_tooltip->show(button, text);
-}
-
-void Tray::hideTooltip(QWidget *button)
-{
-    m_tooltip->hide(button);
-}
-
 void Tray::showPopup(TrayItem *item, QWidget *button)
 {
     if (!item || !button || !item->hasMenu())
         return;
 
-    m_tooltip->close();
     if (m_popup) {
         const bool sameItem = m_popupItem == item;
         m_popup->close();
@@ -583,13 +564,6 @@ void Tray::itemChanged(TrayItem *item)
             continue;
         if (auto *button = static_cast<TrayButton *>(m_buttons.value(it.key()))) {
             button->refresh();
-            if (m_tooltip->isFor(button)) {
-                if (item->toolTip().isEmpty() || item->isPassive()) {
-                    hideTooltip(button);
-                } else {
-                    m_tooltip->update(button, item->toolTip());
-                }
-            }
         }
         updateVisibility();
         return;
@@ -675,8 +649,6 @@ void Tray::removeItem(const QString &itemId)
                           << "status=" << (item ? item->status() : QStringLiteral("<unknown>"))
                           << "remaining=" << m_items.size();
     }
-    if (button)
-        hideTooltip(button);
     if (item && m_popupItem == item) {
         if (m_popup)
             m_popup->close();

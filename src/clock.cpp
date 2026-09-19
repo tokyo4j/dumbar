@@ -6,7 +6,6 @@
 
 #include <QCalendarWidget>
 #include <QDateTime>
-#include <QEnterEvent>
 #include <QScreen>
 
 namespace
@@ -19,11 +18,9 @@ Clock::Clock(QWidget *parent)
 {
     setAutoRaise(true);
     setFocusPolicy(Qt::NoFocus);
-    setAttribute(Qt::WA_Hover);
-    setMouseTracking(true);
     setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
     connect(this, &QToolButton::clicked, this, &Clock::showCalendar);
-    m_tooltip = new LayerShellTooltip(this);
+    m_tooltip = new LayerShellTooltip(this, this);
     connect(&m_timer, &QTimer::timeout, this, [this] {
         updateClock();
         scheduleNextUpdate();
@@ -37,21 +34,8 @@ void Clock::updateClock()
     const QDateTime now = QDateTime::currentDateTime();
     const QString time = now.toString(QString::fromLatin1(kClockFormat));
     const QString date = now.toString(QStringLiteral("dddd, MMMM d, yyyy"));
-    m_tooltipText = QStringLiteral("%1\n%2").arg(time, date);
     setText(time);
-    m_tooltip->update(this, m_tooltipText);
-}
-
-void Clock::enterEvent(QEnterEvent *event)
-{
-    QToolButton::enterEvent(event);
-    m_tooltip->show(this, m_tooltipText);
-}
-
-void Clock::leaveEvent(QEvent *event)
-{
-    m_tooltip->hide(this);
-    QToolButton::leaveEvent(event);
+    m_tooltip->setText(QStringLiteral("%1\n%2").arg(time, date));
 }
 
 void Clock::showCalendar()

@@ -3,6 +3,7 @@
 #include "../dumbar.h"
 #include "popup.h"
 
+#include <QEvent>
 #include <QLabel>
 
 namespace
@@ -10,77 +11,84 @@ namespace
 constexpr int kTooltipDelay = 500;
 }
 
-LayerShellTooltip::LayerShellTooltip(QObject *parent)
+LayerShellTooltip::LayerShellTooltip(QObject *parent, QWidget *anchor)
     : QObject(parent)
+    , m_anchor(anchor)
 {
+    Q_ASSERT(m_anchor);
+    m_anchor->installEventFilter(this);
     m_timer.setSingleShot(true);
     connect(&m_timer, &QTimer::timeout, this, &LayerShellTooltip::showWindow);
 }
 
-void LayerShellTooltip::show(QWidget *anchor, const QString &text)
+void LayerShellTooltip::setText(const QString &text)
+{
+    m_text = text;
+    if (m_text.isEmpty()) {
+        close();
+    } else if (m_window) {
+        update();
+    }
+}
+
+void LayerShellTooltip::show()
 {
     qCDebug(lcDumbar) << "tooltip request"
-                      << "anchor=" << static_cast<void *>(anchor)
-                      << "text=" << text;
+                      << "anchor=" << static_cast<void *>(m_anchor.data())
+                      << "text=" << m_text;
     m_timer.stop();
-    if (!anchor || text.isEmpty() || !anchor->isVisible()) {
-        if (isFor(anchor))
-            hide(anchor);
+    if (!m_anchor || m_text.isEmpty() || !m_anchor->isVisible()) {
+        close();
         return;
     }
 
-    if (isFor(anchor) && m_window) {
-        update(anchor, text);
+    if (m_window) {
+        update();
         return;
     }
 
-    close();
-    m_anchor = anchor;
-    m_text = text;
     m_timer.start(kTooltipDelay);
 }
 
-void LayerShellTooltip::update(QWidget *anchor, const QString &text)
+void LayerShellTooltip::update()
 {
-    if (!isFor(anchor))
-        return;
-    if (text.isEmpty() || !anchor->isVisible()) {
-        hide(anchor);
+    if (!m_anchor || m_text.isEmpty() || !m_anchor->isVisible()) {
+        close();
         return;
     }
 
-    m_text = text;
     if (!m_window)
         return;
 
     m_window->setText(m_text);
     m_window->adjustSize();
     LayerShellPopup::configure(m_window,
-                               anchor,
+                               m_anchor,
                                "tooltip",
                                Qt::BottomEdge,
                                Qt::BottomEdge);
 }
 
-void LayerShellTooltip::hide(QWidget *anchor)
+void LayerShellTooltip::hide()
 {
-    if (!isFor(anchor))
-        return;
-
     close();
 }
 
 void LayerShellTooltip::close()
 {
     m_timer.stop();
-    m_anchor.clear();
-    m_text.clear();
     closeWindow();
 }
 
-bool LayerShellTooltip::isFor(QWidget *anchor) const
+bool LayerShellTooltip::eventFilter(QObject *watched, QEvent *event)
 {
-    return anchor && m_anchor == anchor;
+    if (watched == m_anchor.data()) {
+        if (event->type() == QEvent::Enter)
+            show();
+        else if (event->type() == QEvent::Leave)
+            hide();
+    }
+    return QObject::eventFilter(watched, event);
 }
 
 void LayerShellTooltip::showWindow()

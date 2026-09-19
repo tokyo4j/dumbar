@@ -8,7 +8,6 @@
 #include <QWidget>
 
 class QDBusServiceWatcher;
-class LayerShellTooltip;
 class LayerShellMenu;
 
 class Tray final : public QWidget
@@ -27,8 +26,6 @@ public:
     void removeItemsForService(const QString &service);
     QStringList registeredItems() const;
 
-    void showTooltip(QWidget *button, const QString &text);
-    void hideTooltip(QWidget *button);
     void showPopup(TrayItem *item, QWidget *button);
 
 private slots:
@@ -49,7 +46,6 @@ private:
     class QHBoxLayout *m_layout = nullptr;
     QHash<QString, TrayItem *> m_items;
     QHash<QString, QWidget *> m_buttons;
-    LayerShellTooltip *m_tooltip = nullptr;
     QPointer<LayerShellMenu> m_popup;
     QPointer<TrayItem> m_popupItem;
     bool m_ownsWatcher = false;

@@ -6,6 +6,7 @@
 #include <QTimer>
 
 class QLabel;
+class QEvent;
 class QWidget;
 
 class LayerShellTooltip final : public QObject
@@ -13,19 +14,21 @@ class LayerShellTooltip final : public QObject
     Q_OBJECT
 
 public:
-    explicit LayerShellTooltip(QObject *parent = nullptr);
+    explicit LayerShellTooltip(QObject *parent, QWidget *anchor);
 
-    void show(QWidget *anchor, const QString &text);
-    void update(QWidget *anchor, const QString &text);
-    void hide(QWidget *anchor);
+    void setText(const QString &text);
     void close();
 
-    bool isFor(QWidget *anchor) const;
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private slots:
     void showWindow();
 
 private:
+    void show();
+    void update();
+    void hide();
     void closeWindow();
 
     QPointer<QWidget> m_anchor;
