@@ -33,7 +33,10 @@ TaskBar::TaskBar(ToplevelManager *manager, IconResolver *icons, wl_output *outpu
     m_layout->setContentsMargins(0, 0, 0, 0);
     m_layout->setSpacing(0);
     m_layout->setAlignment(Qt::AlignLeft);
-    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    // The panel gives the taskbar the space left over by the right-hand
+    // widgets.  Do not let the sum of the task buttons' preferred widths
+    // become the panel's preferred width once enough windows are open.
+    setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Expanding);
     setMinimumWidth(0);
     setAcceptDrops(true);
 
