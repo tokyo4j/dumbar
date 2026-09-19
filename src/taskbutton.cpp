@@ -39,7 +39,6 @@ void TaskButton::refresh()
         return;
 
     m_icon = m_icons ? m_icons->iconForAppId(m_toplevel->appId()) : QIcon();
-    setProperty("active", m_toplevel->activated() && !m_toplevel->minimized());
     setToolTip(m_toplevel->title());
     update();
 }
@@ -55,6 +54,12 @@ void TaskButton::activateOrMinimize()
         m_toplevel->activate(nullptr);
 }
 
+void TaskButton::closeToplevel()
+{
+    if (m_toplevel)
+        m_toplevel->close();
+}
+
 void TaskButton::paintEvent(QPaintEvent *event)
 {
     Q_UNUSED(event)
@@ -64,7 +69,7 @@ void TaskButton::paintEvent(QPaintEvent *event)
     QPainter painter(this);
     painter.setRenderHint(QPainter::TextAntialiasing);
 
-    const bool active = property("active").toBool();
+    const bool active = m_toplevel->activated() && !m_toplevel->minimized();
     const bool hovered = underMouse();
     if (active)
         painter.fillRect(rect(), QColor(255, 255, 255, 32));
@@ -98,17 +103,12 @@ void TaskButton::mousePressEvent(QMouseEvent *event)
         QToolButton::mousePressEvent(event);
         return;
     case Qt::MiddleButton:
-        if (m_toplevel)
-            m_toplevel->close();
+        closeToplevel();
         event->accept();
         return;
     case Qt::RightButton: {
         QMenu menu(this);
-        QAction *closeAction = menu.addAction(tr("Close"));
-        connect(closeAction, &QAction::triggered, this, [this] {
-            if (m_toplevel)
-                m_toplevel->close();
-        });
+        menu.addAction(tr("Close"), this, &TaskButton::closeToplevel);
         menu.exec(event->globalPosition().toPoint());
         event->accept();
         return;
@@ -121,9 +121,9 @@ void TaskButton::mousePressEvent(QMouseEvent *event)
 
 void TaskButton::mouseMoveEvent(QMouseEvent *event)
 {
+    const QPoint position = event->position().toPoint();
     if (!m_dragStarted && (event->buttons() & Qt::LeftButton)
-        && (event->position().toPoint() - m_pressPosition).manhattanLength()
-               >= QApplication::startDragDistance()) {
+        && (position - m_pressPosition).manhattanLength() >= QApplication::startDragDistance()) {
         m_dragStarted = true;
         setDown(false);
         startDrag();

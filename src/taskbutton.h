@@ -14,7 +14,7 @@ public:
 
     Toplevel *toplevel() const { return m_toplevel; }
 
-public slots:
+public:
     void refresh();
 
 protected:
@@ -23,10 +23,9 @@ protected:
     void mouseMoveEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
 
-private slots:
-    void activateOrMinimize();
-
 private:
+    void activateOrMinimize();
+    void closeToplevel();
     void startDrag();
 
     Toplevel *m_toplevel = nullptr;

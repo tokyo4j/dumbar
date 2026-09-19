@@ -2,9 +2,8 @@
 
 #include "toplevelmanager.h"
 
-#include <QHash>
+#include <QList>
 #include <QPointer>
-#include <QSet>
 #include <QWidget>
 
 class IconResolver;
@@ -42,20 +41,19 @@ private slots:
     void managerAvailabilityChanged(bool available);
 
 private:
+    TaskButton *buttonFor(Toplevel *toplevel) const;
+    QList<TaskButton *> visibleButtons(TaskButton *excluded = nullptr) const;
     TaskButton *dragSource(const QDropEvent *event) const;
-    bool updateDropIndicator(const QPoint &position, TaskButton *source);
+    bool acceptDrag(QDropEvent *event);
+    void updateDropIndicator(const QPoint &position, TaskButton *source);
     void clearDropIndicator();
     void reorderButton(TaskButton *button, int insertionIndex);
-    void syncLayoutOrder();
     void recalculateWidths();
 
-    ToplevelManager *m_manager = nullptr;
     IconResolver *m_icons = nullptr;
     wl_output *m_output = nullptr;
     class QHBoxLayout *m_layout = nullptr;
-    QHash<Toplevel *, TaskButton *> m_buttons;
-    QList<Toplevel *> m_order;
-    QSet<Toplevel *> m_knownToplevels;
+    QList<TaskButton *> m_buttons;
     QWidget *m_dropIndicator = nullptr;
     QPointer<TaskButton> m_draggedButton;
     QPoint m_lastDragPosition;

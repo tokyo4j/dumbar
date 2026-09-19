@@ -10,7 +10,6 @@
 #include <QDragMoveEvent>
 #include <QDropEvent>
 #include <QHBoxLayout>
-#include <QMimeData>
 #include <QResizeEvent>
 
 #include <algorithm>
@@ -19,7 +18,6 @@ namespace
 {
 constexpr int kDropIndicatorWidth = 2;
 constexpr int kDropIndicatorHeight = 24;
-constexpr auto kTaskButtonMimeType = "application/x-dumbar-task-button";
 }
 
 int taskButtonWidth(int availableWidth, int windowCount)
@@ -32,14 +30,13 @@ int taskButtonWidth(int availableWidth, int windowCount)
 
 TaskBar::TaskBar(ToplevelManager *manager, IconResolver *icons, wl_output *output, QWidget *parent)
     : QWidget(parent)
-    , m_manager(manager)
     , m_icons(icons)
     , m_output(output)
     , m_layout(new QHBoxLayout(this))
 {
     qCDebug(lcDumbar) << "creating taskbar"
-                             << "output=" << static_cast<void *>(m_output)
-                             << "manager=" << static_cast<void *>(m_manager);
+                       << "output=" << static_cast<void *>(m_output)
+                       << "manager=" << static_cast<void *>(manager);
     m_layout->setContentsMargins(0, 0, 0, 0);
     m_layout->setSpacing(0);
     m_layout->setAlignment(Qt::AlignLeft);
@@ -55,17 +52,17 @@ TaskBar::TaskBar(ToplevelManager *manager, IconResolver *icons, wl_output *outpu
         "QWidget#dropIndicator { background: rgba(255, 255, 255, 210); border-radius: 1px; }"));
     m_dropIndicator->hide();
 
-    if (!m_manager) {
+    if (!manager) {
         return;
     }
 
-    connect(m_manager, &ToplevelManager::toplevelAdded, this, &TaskBar::addToplevel);
-    connect(m_manager, &ToplevelManager::toplevelRemoved, this, &TaskBar::removeToplevel);
-    connect(m_manager, &ToplevelManager::availableChanged, this, &TaskBar::managerAvailabilityChanged);
+    connect(manager, &ToplevelManager::toplevelAdded, this, &TaskBar::addToplevel);
+    connect(manager, &ToplevelManager::toplevelRemoved, this, &TaskBar::removeToplevel);
+    connect(manager, &ToplevelManager::availableChanged, this, &TaskBar::managerAvailabilityChanged);
 
-    for (Toplevel *toplevel : m_manager->toplevels())
+    for (Toplevel *toplevel : manager->toplevels())
         addToplevel(toplevel);
-    managerAvailabilityChanged(m_manager->isAvailable());
+    managerAvailabilityChanged(manager->isAvailable());
 }
 
 void TaskBar::resizeEvent(QResizeEvent *event)
@@ -78,25 +75,24 @@ void TaskBar::resizeEvent(QResizeEvent *event)
 
 void TaskBar::addToplevel(Toplevel *toplevel)
 {
-    if (!toplevel)
+    if (!toplevel || buttonFor(toplevel))
         return;
 
-    if (!m_knownToplevels.contains(toplevel)) {
-        m_knownToplevels.insert(toplevel);
-        m_order.append(toplevel);
-        connect(toplevel, &Toplevel::updated, this, &TaskBar::updateToplevel);
-        qCDebug(lcDumbar) << "tracking toplevel"
-                                 << "output=" << static_cast<void *>(m_output)
-                                 << "title=" << toplevel->title();
-    }
+    auto *button = new TaskButton(toplevel, m_icons, this);
+    button->hide();
+    m_buttons.append(button);
+    m_layout->addWidget(button, 0, Qt::AlignLeft);
+    connect(toplevel, &Toplevel::updated, this, &TaskBar::updateToplevel);
+    qCDebug(lcDumbar) << "tracking toplevel"
+                             << "output=" << static_cast<void *>(m_output)
+                             << "title=" << toplevel->title();
     updateToplevel(toplevel);
+    recalculateWidths();
 }
 
 void TaskBar::removeToplevel(Toplevel *toplevel)
 {
-    m_knownToplevels.remove(toplevel);
-    m_order.removeOne(toplevel);
-    TaskButton *button = m_buttons.take(toplevel);
+    TaskButton *button = buttonFor(toplevel);
     qCDebug(lcDumbar) << "removing toplevel from taskbar"
                              << "output=" << static_cast<void *>(m_output)
                              << "title=" << (toplevel ? toplevel->title() : QStringLiteral("<null>"))
@@ -106,38 +102,29 @@ void TaskBar::removeToplevel(Toplevel *toplevel)
 
     if (m_draggedButton == button)
         clearDropIndicator();
+    m_buttons.removeOne(button);
     m_layout->removeWidget(button);
     button->deleteLater();
-    syncLayoutOrder();
     recalculateWidths();
 }
 
 void TaskBar::updateToplevel(Toplevel *toplevel)
 {
-    if (!toplevel || !m_knownToplevels.contains(toplevel))
+    TaskButton *button = buttonFor(toplevel);
+    if (!button)
         return;
 
     const bool shouldShow = toplevel->enteredOutput(m_output);
-    TaskButton *button = m_buttons.value(toplevel);
+    const bool wasShown = !button->isHidden();
     qCDebug(lcDumbar) << "taskbar output filter"
                              << "output=" << static_cast<void *>(m_output)
                              << "title=" << toplevel->title()
                              << "enteredOutput=" << shouldShow
                              << "hasButton=" << (button != nullptr);
-    if (shouldShow && !button) {
-        button = new TaskButton(toplevel, m_icons, this);
-        m_buttons.insert(toplevel, button);
-        syncLayoutOrder();
+    button->setVisible(shouldShow);
+    button->refresh();
+    if (wasShown != shouldShow)
         recalculateWidths();
-    } else if (!shouldShow && button) {
-        m_buttons.remove(toplevel);
-        m_layout->removeWidget(button);
-        button->deleteLater();
-        syncLayoutOrder();
-        recalculateWidths();
-    } else if (button) {
-        button->refresh();
-    }
 }
 
 void TaskBar::managerAvailabilityChanged(bool available)
@@ -154,31 +141,24 @@ void TaskBar::managerAvailabilityChanged(bool available)
 
 void TaskBar::recalculateWidths()
 {
-    const int width = taskButtonWidth(contentsRect().width(), m_buttons.size());
-    if (width != m_lastLoggedButtonWidth || m_buttons.size() != m_lastLoggedButtonCount) {
+    const QList<TaskButton *> buttons = visibleButtons();
+    const int width = taskButtonWidth(contentsRect().width(), buttons.size());
+    if (width != m_lastLoggedButtonWidth || buttons.size() != m_lastLoggedButtonCount) {
         qCDebug(lcDumbar) << "task button widths"
                                  << "output=" << static_cast<void *>(m_output)
                                  << "taskbarWidth=" << contentsRect().width()
-                                 << "buttonCount=" << m_buttons.size()
+                                 << "buttonCount=" << buttons.size()
                                  << "buttonWidth=" << width;
         m_lastLoggedButtonWidth = width;
-        m_lastLoggedButtonCount = m_buttons.size();
+        m_lastLoggedButtonCount = buttons.size();
     }
-    for (TaskButton *button : m_buttons)
+    for (TaskButton *button : buttons)
         button->setFixedWidth(width);
 }
 
 void TaskBar::dragEnterEvent(QDragEnterEvent *event)
 {
-    TaskButton *source = dragSource(event);
-    if (!source) {
-        event->ignore();
-        return;
-    }
-
-    m_draggedButton = source;
-    updateDropIndicator(event->position().toPoint(), source);
-    event->acceptProposedAction();
+    acceptDrag(event);
 }
 
 void TaskBar::dragLeaveEvent(QDragLeaveEvent *event)
@@ -189,59 +169,72 @@ void TaskBar::dragLeaveEvent(QDragLeaveEvent *event)
 
 void TaskBar::dragMoveEvent(QDragMoveEvent *event)
 {
-    TaskButton *source = dragSource(event);
-    if (!source) {
-        clearDropIndicator();
-        event->ignore();
-        return;
-    }
-
-    m_draggedButton = source;
-    updateDropIndicator(event->position().toPoint(), source);
-    event->acceptProposedAction();
+    acceptDrag(event);
 }
 
 void TaskBar::dropEvent(QDropEvent *event)
 {
-    TaskButton *source = dragSource(event);
-    if (!source) {
-        event->ignore();
+    if (!acceptDrag(event))
         return;
-    }
 
-    m_draggedButton = source;
-    updateDropIndicator(event->position().toPoint(), source);
-    reorderButton(source, m_dropIndex);
+    reorderButton(m_draggedButton, m_dropIndex);
     event->setDropAction(Qt::MoveAction);
     event->accept();
     clearDropIndicator();
 }
 
+TaskButton *TaskBar::buttonFor(Toplevel *toplevel) const
+{
+    for (TaskButton *button : m_buttons) {
+        if (button->toplevel() == toplevel)
+            return button;
+    }
+    return nullptr;
+}
+
+QList<TaskButton *> TaskBar::visibleButtons(TaskButton *excluded) const
+{
+    QList<TaskButton *> buttons;
+    for (TaskButton *button : m_buttons) {
+        if (!button->isHidden() && button != excluded)
+            buttons.append(button);
+    }
+    return buttons;
+}
+
 TaskButton *TaskBar::dragSource(const QDropEvent *event) const
 {
-    if (!event || !event->mimeData() || !event->mimeData()->hasFormat(kTaskButtonMimeType))
+    if (!event)
         return nullptr;
 
     auto *source = qobject_cast<TaskButton *>(event->source());
-    if (!source || source->parentWidget() != this || !m_buttons.contains(source->toplevel())
-        || m_buttons.value(source->toplevel()) != source) {
+    if (!source || source->parentWidget() != this || !m_buttons.contains(source))
         return nullptr;
-    }
 
     return source;
 }
 
-bool TaskBar::updateDropIndicator(const QPoint &position, TaskButton *source)
+bool TaskBar::acceptDrag(QDropEvent *event)
+{
+    TaskButton *source = dragSource(event);
+    if (!source) {
+        clearDropIndicator();
+        event->ignore();
+        return false;
+    }
+
+    m_draggedButton = source;
+    updateDropIndicator(event->position().toPoint(), source);
+    event->acceptProposedAction();
+    return true;
+}
+
+void TaskBar::updateDropIndicator(const QPoint &position, TaskButton *source)
 {
     if (!source)
-        return false;
+        return;
 
-    QList<TaskButton *> buttons;
-    for (Toplevel *toplevel : m_order) {
-        TaskButton *button = m_buttons.value(toplevel);
-        if (button && button != source)
-            buttons.append(button);
-    }
+    const QList<TaskButton *> buttons = visibleButtons(source);
 
     int insertionIndex = buttons.size();
     for (int i = 0; i < buttons.size(); ++i) {
@@ -255,7 +248,7 @@ bool TaskBar::updateDropIndicator(const QPoint &position, TaskButton *source)
 
     if (buttons.isEmpty()) {
         m_dropIndicator->hide();
-        return true;
+        return;
     }
 
     const int boundary = insertionIndex < buttons.size()
@@ -270,7 +263,6 @@ bool TaskBar::updateDropIndicator(const QPoint &position, TaskButton *source)
     m_dropIndicator->setGeometry(indicatorX, indicatorY, kDropIndicatorWidth, indicatorHeight);
     m_dropIndicator->raise();
     m_dropIndicator->show();
-    return true;
 }
 
 void TaskBar::clearDropIndicator()
@@ -282,44 +274,23 @@ void TaskBar::clearDropIndicator()
 
 void TaskBar::reorderButton(TaskButton *button, int insertionIndex)
 {
-    if (!button || insertionIndex < 0)
+    if (!button || insertionIndex < 0 || !m_buttons.contains(button))
         return;
 
-    Toplevel *moved = button->toplevel();
-    if (!moved || !m_order.contains(moved))
-        return;
-
-    QList<Toplevel *> visibleOrder;
-    for (Toplevel *toplevel : m_order) {
-        if (toplevel != moved && m_buttons.contains(toplevel))
-            visibleOrder.append(toplevel);
-    }
+    const QList<TaskButton *> visibleOrder = visibleButtons(button);
     insertionIndex = qBound(0, insertionIndex, visibleOrder.size());
+    m_buttons.removeOne(button);
 
-    m_order.removeOne(moved);
-    int orderIndex = m_order.size();
-    if (insertionIndex < visibleOrder.size()) {
-        orderIndex = m_order.indexOf(visibleOrder.at(insertionIndex));
-    } else if (!visibleOrder.isEmpty()) {
-        orderIndex = m_order.indexOf(visibleOrder.constLast()) + 1;
-    }
-    m_order.insert(orderIndex, moved);
-    syncLayoutOrder();
+    int orderIndex = m_buttons.size();
+    if (insertionIndex < visibleOrder.size())
+        orderIndex = m_buttons.indexOf(visibleOrder.at(insertionIndex));
+    else if (!visibleOrder.isEmpty())
+        orderIndex = m_buttons.indexOf(visibleOrder.constLast()) + 1;
+    m_buttons.insert(orderIndex, button);
+    m_layout->removeWidget(button);
+    m_layout->insertWidget(orderIndex, button, 0, Qt::AlignLeft);
     qCDebug(lcDumbar) << "reordered task button"
                              << "output=" << static_cast<void *>(m_output)
-                             << "title=" << moved->title()
+                             << "title=" << button->toplevel()->title()
                              << "insertionIndex=" << insertionIndex;
-}
-
-void TaskBar::syncLayoutOrder()
-{
-    for (TaskButton *button : m_buttons)
-        m_layout->removeWidget(button);
-
-    int layoutIndex = 0;
-    for (Toplevel *toplevel : m_order) {
-        TaskButton *button = m_buttons.value(toplevel);
-        if (button)
-            m_layout->insertWidget(layoutIndex++, button, 0, Qt::AlignLeft);
-    }
 }
