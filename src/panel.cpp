@@ -43,7 +43,7 @@ Panel::Panel(ToplevelManager *toplevelManager, IconResolver *icons, QScreen *scr
                            << "geometry=" << (m_screen ? m_screen->geometry() : QRect());
 
     auto *layout = new QHBoxLayout(this);
-    layout->setContentsMargins(DumbarStyle::kPanelSpacing, 0, DumbarStyle::kPanelSpacing, 0);
+    layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(DumbarStyle::kPanelSpacing);
 
     if (m_screen) {
