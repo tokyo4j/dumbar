@@ -3,6 +3,7 @@
 #include "trayitem.h"
 
 #include <QDBusConnection>
+#include <QDBusContext>
 #include <QHash>
 #include <QPointer>
 #include <QWidget>
@@ -10,7 +11,7 @@
 class QDBusServiceWatcher;
 class LayerShellMenu;
 
-class Tray final : public QWidget
+class Tray final : public QWidget, protected QDBusContext
 {
     Q_OBJECT
 
@@ -19,7 +20,7 @@ public:
     ~Tray() override;
 
 public slots:
-    void registerItem(const QString &itemId);
+    QString registerItem(const QString &registration);
     void unregisterItem(const QString &itemId);
 
 public:

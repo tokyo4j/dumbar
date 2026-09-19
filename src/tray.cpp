@@ -171,7 +171,7 @@ class StatusNotifierWatcherAdaptor final : public QDBusAbstractAdaptor
     Q_CLASSINFO("D-Bus Interface", "org.kde.StatusNotifierWatcher")
     Q_PROPERTY(QStringList RegisteredStatusNotifierItems READ registeredItems)
     Q_PROPERTY(bool IsStatusNotifierHostRegistered READ isHostRegistered)
-    Q_PROPERTY(uint ProtocolVersion READ protocolVersion)
+    Q_PROPERTY(int ProtocolVersion READ protocolVersion)
 
 public:
     explicit StatusNotifierWatcherAdaptor(Tray *tray)
@@ -182,7 +182,7 @@ public:
 
     QStringList registeredItems() const { return m_items; }
     bool isHostRegistered() const { return m_hostRegistered; }
-    uint protocolVersion() const { return 0; }
+    int protocolVersion() const { return 0; }
 
     void removeService(const QString &service)
     {
@@ -200,14 +200,16 @@ public:
 public slots:
     void RegisterStatusNotifierItem(const QString &service)
     {
-        if (service.isEmpty())
+        const QString itemId = m_tray->registerItem(service);
+        if (itemId.isEmpty())
             return;
-        qCDebug(lcDumbar) << "status notifier item registered" << "item=" << service;
-        if (!m_items.contains(service)) {
-            m_items.append(service);
-            emit StatusNotifierItemRegistered(service);
+        qCDebug(lcDumbar) << "status notifier item registered"
+                          << "registration=" << service
+                          << "item=" << itemId;
+        if (!m_items.contains(itemId)) {
+            m_items.append(itemId);
+            emit StatusNotifierItemRegistered(itemId);
         }
-        m_tray->registerItem(service);
     }
 
     void RegisterStatusNotifierHost(const QString &service)
@@ -435,13 +437,26 @@ Tray::~Tray()
     }
 }
 
-void Tray::registerItem(const QString &itemId)
+QString Tray::registerItem(const QString &registration)
 {
-    if (itemId.isEmpty())
-        return;
+    if (registration.isEmpty())
+        return {};
+
+    QString itemId = registration;
+    if (registration.startsWith(QLatin1Char('/'))) {
+        if (!calledFromDBus() || message().service().isEmpty()) {
+            qCWarning(lcDumbar) << "ignoring path-only tray item without a D-Bus sender"
+                                << "path=" << registration;
+            return {};
+        }
+        // The SNI protocol allows an item to register only its object path;
+        // in that form the caller's unique bus name identifies the service.
+        itemId = message().service() + registration;
+    }
+
     if (m_items.contains(itemId)) {
         qCDebug(lcDumbar) << "ignoring duplicate tray item" << "item=" << itemId;
-        return;
+        return itemId;
     }
 
     const int slash = itemId.indexOf(QLatin1Char('/'));
@@ -449,7 +464,7 @@ void Tray::registerItem(const QString &itemId)
     const QString path = slash < 0 ? QStringLiteral("/StatusNotifierItem") : itemId.mid(slash);
     if (service.isEmpty() || !path.startsWith(QLatin1Char('/'))) {
         qCDebug(lcDumbar) << "ignoring malformed tray item" << "item=" << itemId;
-        return;
+        return {};
     }
 
     qCDebug(lcDumbar) << "creating tray item"
@@ -460,7 +475,7 @@ void Tray::registerItem(const QString &itemId)
     if (!item->isValid()) {
         qCDebug(lcDumbar) << "tray item is invalid and will be destroyed" << "item=" << itemId;
         item->deleteLater();
-        return;
+        return {};
     }
 
     m_items.insert(itemId, item);
@@ -477,6 +492,7 @@ void Tray::registerItem(const QString &itemId)
                       << "status=" << item->status()
                       << "passive=" << item->isPassive()
                       << "itemCount=" << m_items.size();
+    return itemId;
 }
 
 void Tray::unregisterItem(const QString &itemId)
