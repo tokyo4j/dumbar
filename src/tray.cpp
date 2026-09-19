@@ -60,6 +60,37 @@ QString menuString(const QVariantMap &properties, const char *name)
     return menuProperty(properties, name).toString();
 }
 
+QString dbusMenuLabelToQtText(const QString &label)
+{
+    // DBusMenu labels use '_' for mnemonics and '__' for a literal
+    // underscore.  Qt uses '&' for mnemonics and '&&' for a literal
+    // ampersand, so translate the label at the toolkit boundary.
+    QString result;
+    result.reserve(label.size() + 1);
+    bool mnemonicAdded = false;
+
+    for (qsizetype i = 0; i < label.size(); ++i) {
+        const QChar character = label.at(i);
+        if (character == QLatin1Char('_')) {
+            if (i + 1 < label.size() && label.at(i + 1) == QLatin1Char('_')) {
+                result += QLatin1Char('_');
+                ++i;
+            } else if (!mnemonicAdded && i + 1 < label.size()) {
+                result += QLatin1Char('&');
+                mnemonicAdded = true;
+            }
+            continue;
+        }
+
+        if (character == QLatin1Char('&'))
+            result += QStringLiteral("&&");
+        else
+            result += character;
+    }
+
+    return result;
+}
+
 bool menuBool(const QVariantMap &properties, const char *name, bool defaultValue)
 {
     const QVariant value = menuProperty(properties, name);
@@ -210,7 +241,7 @@ void populateMenu(QMenu *menu, const MenuNode &node, TrayItem *item)
             continue;
         }
 
-        const QString label = menuString(child.properties, "label");
+        const QString label = dbusMenuLabelToQtText(menuString(child.properties, "label"));
         QAction *action = menu->addAction(menuIcon(child.properties), label);
         action->setEnabled(menuBool(child.properties, "enabled", true));
 
