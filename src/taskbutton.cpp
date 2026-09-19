@@ -15,6 +15,7 @@ namespace
 constexpr int kIconSize = 16;
 constexpr int kHorizontalPadding = 4;
 constexpr int kIconTextGap = 4;
+constexpr int kDragChipSize = 26;
 constexpr auto kTaskButtonMimeType = "application/x-dumbar-task-button";
 }
 
@@ -83,6 +84,9 @@ void TaskButton::paintEvent(QPaintEvent *event)
         painter.setPen(palette().color(QPalette::ButtonText));
         painter.drawText(QRect(textX, 0, textWidth, height()), Qt::AlignVCenter | Qt::AlignLeft, title);
     }
+
+    if (m_dragging)
+        painter.fillRect(rect(), QColor(0, 0, 0, 96));
 }
 
 void TaskButton::mousePressEvent(QMouseEvent *event)
@@ -145,18 +149,28 @@ void TaskButton::startDrag()
     auto *mimeData = new QMimeData;
     mimeData->setData(kTaskButtonMimeType, QByteArrayLiteral("move"));
 
-    QPixmap pixmap(size());
+    m_dragging = true;
+    update();
+
+    QPixmap pixmap(kDragChipSize, kDragChipSize);
     pixmap.fill(Qt::transparent);
-    render(&pixmap);
-    {
-        QPainter painter(&pixmap);
-        painter.setCompositionMode(QPainter::CompositionMode_DestinationIn);
-        painter.fillRect(pixmap.rect(), QColor(255, 255, 255, 176));
-    }
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setBrush(QColor(32, 32, 32, 235));
+    painter.setPen(QPen(QColor(255, 255, 255, 70), 1));
+    painter.drawRoundedRect(QRectF(0.5, 0.5, kDragChipSize - 1, kDragChipSize - 1), 6, 6);
+    if (!m_icon.isNull())
+        m_icon.paint(&painter, QRect((kDragChipSize - kIconSize) / 2,
+                                    (kDragChipSize - kIconSize) / 2,
+                                    kIconSize,
+                                    kIconSize));
 
     auto *drag = new QDrag(this);
     drag->setMimeData(mimeData);
     drag->setPixmap(pixmap);
-    drag->setHotSpot(m_pressPosition);
+    drag->setHotSpot(QPoint(kDragChipSize / 2, kDragChipSize / 2));
     drag->exec(Qt::MoveAction);
+
+    m_dragging = false;
+    update();
 }

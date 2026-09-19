@@ -34,4 +34,5 @@ private:
     QIcon m_icon;
     QPoint m_pressPosition;
     bool m_dragStarted = false;
+    bool m_dragging = false;
 };
