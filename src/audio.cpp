@@ -21,11 +21,11 @@
 
 namespace
 {
-int volumePercent(const pa_cvolume &volume)
+double volumePercent(const pa_cvolume &volume)
 {
     const double normalized = static_cast<double>(pa_cvolume_avg(&volume))
                               / static_cast<double>(PA_VOLUME_NORM);
-    return qBound(0, qRound(normalized * 100.0), 100);
+    return qBound(0.0, normalized * 100.0, 100.0);
 }
 
 QString endpointIcon(Audio::Endpoint endpoint, const Audio::VolumeState &state)
@@ -46,7 +46,7 @@ QString endpointTooltip(Audio::Endpoint endpoint, const Audio::VolumeState &stat
 {
     const QString name = endpoint == Audio::Endpoint::Microphone ? QStringLiteral("mic")
                                                                    : QStringLiteral("speaker");
-    return QStringLiteral("%1: %2%").arg(name).arg(state.percent);
+    return QStringLiteral("%1: %2%").arg(name).arg(qRound(state.percent));
 }
 
 class AudioButton final : public QToolButton
@@ -67,9 +67,9 @@ public:
 protected:
     void wheelEvent(QWheelEvent *event) override
     {
-        const int delta = event->angleDelta().y();
-        if (delta != 0)
-            m_audio->changeVolume(m_endpoint, delta > 0 ? 5 : -5);
+        if (const int angleDelta = event->angleDelta().y())
+            m_audio->changeVolume(m_endpoint,
+                                  static_cast<double>(angleDelta) * Config::kVolumeScrollMultiplier);
         event->accept();
     }
 
@@ -90,7 +90,7 @@ public:
 
     Audio::VolumeState state(Audio::Endpoint endpoint) const;
     void toggleMute(Audio::Endpoint endpoint);
-    void setVolume(Audio::Endpoint endpoint, int percent);
+    void setVolume(Audio::Endpoint endpoint, double percent);
 
 Q_SIGNALS:
     void stateChanged();
@@ -122,7 +122,7 @@ private:
     void publishState();
     void reportUnavailable(const QString &reason);
     void setMuteOnPulseThread(Audio::Endpoint endpoint);
-    void setVolumeOnPulseThread(Audio::Endpoint endpoint, int percent);
+    void setVolumeOnPulseThread(Audio::Endpoint endpoint, double percent);
 
     static bool ready(pa_context *context);
     static void unref(pa_operation *operation);
@@ -229,14 +229,14 @@ void AudioBackend::toggleMute(Audio::Endpoint endpoint)
     pa_threaded_mainloop_unlock(m_mainloop);
 }
 
-void AudioBackend::setVolume(Audio::Endpoint endpoint, int percent)
+void AudioBackend::setVolume(Audio::Endpoint endpoint, double percent)
 {
     if (!m_mainloop || !m_mainloopStarted || m_stopping.load())
         return;
 
     pa_threaded_mainloop_lock(m_mainloop);
     if (ready(m_context))
-        setVolumeOnPulseThread(endpoint, qBound(0, percent, 100));
+        setVolumeOnPulseThread(endpoint, qBound(0.0, percent, 100.0));
     pa_threaded_mainloop_unlock(m_mainloop);
 }
 
@@ -420,7 +420,7 @@ void AudioBackend::setMuteOnPulseThread(Audio::Endpoint endpoint)
     }
 }
 
-void AudioBackend::setVolumeOnPulseThread(Audio::Endpoint endpoint, int percent)
+void AudioBackend::setVolumeOnPulseThread(Audio::Endpoint endpoint, double percent)
 {
     const bool microphone = endpoint == Audio::Endpoint::Microphone;
     const QByteArray &name = microphone ? m_sourceName : m_sinkName;
@@ -476,14 +476,14 @@ void Audio::toggleMute(Endpoint endpoint)
         m_backend->toggleMute(endpoint);
 }
 
-void Audio::changeVolume(Endpoint endpoint, int delta)
+void Audio::changeVolume(Endpoint endpoint, double delta)
 {
     if (!m_backend)
         return;
 
     const VolumeState &state = endpoint == Endpoint::Microphone ? m_microphone : m_speaker;
-    const int current = state.valid ? state.percent : 50;
-    m_backend->setVolume(endpoint, qBound(0, current + delta, 100));
+    const double current = state.valid ? state.percent : 50.0;
+    m_backend->setVolume(endpoint, qBound(0.0, current + delta, 100.0));
 }
 
 void Audio::backendStateChanged()

@@ -12,6 +12,8 @@ inline constexpr auto kDefaultIconTheme = "breeze-dark";
 inline constexpr auto kClockFormat = "HH:mm";
 inline constexpr auto kClockTooltipFormat = "HH:mm AP\nyyyy/MM/dd (ddd)";
 
+inline constexpr double kVolumeScrollMultiplier = 0.01;
+
 inline constexpr int kTooltipDelay = 300;
 
 inline constexpr int kPanelHeight = 40;

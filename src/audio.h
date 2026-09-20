@@ -17,7 +17,7 @@ public:
     };
 
     struct VolumeState {
-        int percent = 0;
+        double percent = 0.0;
         bool muted = false;
         bool valid = false;
     };
@@ -25,7 +25,7 @@ public:
     explicit Audio(QWidget *parent = nullptr);
 
     void toggleMute(Endpoint endpoint);
-    void changeVolume(Endpoint endpoint, int delta);
+    void changeVolume(Endpoint endpoint, double delta);
 
 private slots:
     void backendStateChanged();
