@@ -2,6 +2,7 @@
 
 #include "dumbar.h"
 #include "iconresolver.h"
+#include "layershell/layershelltooltip.h"
 #include "toplevelmanager.h"
 
 #include <QApplication>
@@ -33,6 +34,7 @@ TaskButton::TaskButton(Toplevel *toplevel, IconResolver *icons, QWidget *parent)
     setFont(taskButtonFont);
 
     connect(this, &QToolButton::clicked, this, &TaskButton::activateOrMinimize);
+    m_tooltip = new LayerShellTooltip(this, this);
     refresh();
 }
 
@@ -42,7 +44,7 @@ void TaskButton::refresh()
         return;
 
     m_icon = m_icons ? m_icons->iconForAppId(m_toplevel->appId()) : QIcon();
-    setToolTip(m_toplevel->title());
+    m_tooltip->setText(m_toplevel->title());
     update();
 }
 

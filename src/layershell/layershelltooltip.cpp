@@ -100,9 +100,6 @@ void LayerShellTooltip::showWindow()
     tooltip->setAttribute(Qt::WA_DeleteOnClose);
     tooltip->setAttribute(Qt::WA_TransparentForMouseEvents);
     tooltip->setObjectName(QStringLiteral("dumbarTooltip"));
-    tooltip->setTextFormat(Qt::PlainText);
-    tooltip->setWordWrap(true);
-    tooltip->setMaximumWidth(Config::kTooltipMaxWidth);
     tooltip->setMargin(Config::kTooltipMargin);
     QFont tooltipFont = tooltip->font();
     tooltipFont.setPixelSize(Config::kFontSize);

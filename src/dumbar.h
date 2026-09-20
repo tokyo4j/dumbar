@@ -34,7 +34,6 @@ inline constexpr int kDropIndicatorRadius = 1;
 inline constexpr int kDragChipSize = 40;
 inline constexpr int kDragChipRadius = 6;
 
-inline constexpr int kTooltipMaxWidth = 700;
 inline constexpr int kTooltipMargin = 5;
 inline constexpr int kTooltipRadius = 3;
 

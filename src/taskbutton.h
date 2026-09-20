@@ -3,6 +3,7 @@
 #include <QToolButton>
 
 class IconResolver;
+class LayerShellTooltip;
 class Toplevel;
 
 class TaskButton final : public QToolButton
@@ -30,6 +31,7 @@ private:
 
     Toplevel *m_toplevel = nullptr;
     IconResolver *m_icons = nullptr;
+    LayerShellTooltip *m_tooltip = nullptr;
     QIcon m_icon;
     QPoint m_pressPosition;
     bool m_dragStarted = false;
