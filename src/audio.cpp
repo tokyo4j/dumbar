@@ -481,7 +481,7 @@ void Audio::changeVolume(Endpoint endpoint, double delta)
     if (!m_backend)
         return;
 
-    const VolumeState &state = endpoint == Endpoint::Microphone ? m_microphone : m_speaker;
+    const VolumeState &state = m_backend->state(endpoint);
     const double current = state.valid ? state.percent : 50.0;
     m_backend->setVolume(endpoint, qBound(0.0, current + delta, 100.0));
 }
