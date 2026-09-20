@@ -34,7 +34,8 @@ bool configure(QWidget *popup,
     // The panel is a layer-shell surface. Positioner coordinates therefore
     // have to be relative to the panel, rather than global screen coordinates.
     popupWindow->setTransientParent(panelWindow);
-    const QRect anchorRect(anchor->mapTo(panel, QPoint(0, 0)), anchor->size());
+    QRect anchorRect(anchor->mapTo(panel, QPoint(0, 0)), anchor->size());
+    anchorRect.adjust(0, -3, 0, 3);
     popupWindow->setProperty("_q_waylandPopupAnchorRect", QVariant::fromValue(anchorRect));
     popupWindow->setProperty("_q_waylandPopupAnchor", QVariant::fromValue(anchorEdges));
     popupWindow->setProperty("_q_waylandPopupGravity", QVariant::fromValue(gravityEdges));
