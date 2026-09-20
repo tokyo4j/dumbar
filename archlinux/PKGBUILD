@@ -1,5 +1,5 @@
 pkgname=dumbar
-pkgver=0.1
+pkgver=v0.0.1.r0.gadb0152
 pkgrel=1
 pkgdesc='A simple Wayland panel and taskbar built with Qt 6'
 arch=('x86_64')
@@ -10,6 +10,11 @@ makedepends=('cmake' 'ninja' 'pkgconf')
 
 source=("git+https://github.com/tokyo4j/dumbar.git")
 sha256sums=('SKIP')
+
+pkgver() {
+  cd dumbar
+  git describe --long | sed 's/\([^-]*-g\)/r\1/;s/-/./g'
+}
 
 build() {
 	cmake -S "$srcdir/dumbar" -B "$srcdir/build" -G Ninja \
