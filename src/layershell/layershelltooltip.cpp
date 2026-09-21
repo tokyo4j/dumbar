@@ -60,7 +60,6 @@ void LayerShellTooltip::update()
     m_window->adjustSize();
     LayerShellPopup::configure(m_window,
                                m_anchor,
-                               "tooltip",
                                Qt::BottomEdge,
                                Qt::BottomEdge);
 }
@@ -110,7 +109,6 @@ void LayerShellTooltip::showWindow()
 
     if (!LayerShellPopup::configure(tooltip,
                                     m_anchor,
-                                    "tooltip",
                                     Qt::BottomEdge,
                                     Qt::BottomEdge)) {
         tooltip->deleteLater();

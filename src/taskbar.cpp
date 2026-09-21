@@ -138,15 +138,6 @@ void TaskBar::recalculateWidths()
 {
     const QList<TaskButton *> buttons = visibleButtons();
     const int width = taskButtonWidth(contentsRect().width(), buttons.size());
-    if (width != m_lastLoggedButtonWidth || buttons.size() != m_lastLoggedButtonCount) {
-        qCDebug(lcDumbar) << "task button widths"
-                                 << "output=" << static_cast<void *>(m_output)
-                                 << "taskbarWidth=" << contentsRect().width()
-                                 << "buttonCount=" << buttons.size()
-                                 << "buttonWidth=" << width;
-        m_lastLoggedButtonWidth = width;
-        m_lastLoggedButtonCount = buttons.size();
-    }
     for (TaskButton *button : buttons)
         button->setFixedWidth(width);
 }

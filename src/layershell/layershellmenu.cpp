@@ -23,7 +23,7 @@ bool LayerShellMenu::popupFor(QWidget *anchor)
         return false;
 
     adjustSize();
-    if (!LayerShellPopup::configure(this, anchor, "menu"))
+    if (!LayerShellPopup::configure(this, anchor))
         return false;
 
     // QMenu::popup() establishes Qt's popup grab and focus handling. The

@@ -56,7 +56,7 @@ void Clock::showCalendar()
                            << "screenGeometry=" << (panelScreen ? panelScreen->geometry() : QRect())
                            << "clockGeometryInPanel=" << (panel ? QRect(mapTo(panel, QPoint(0, 0)), size()) : QRect());
 
-    if (!LayerShellPopup::configure(calendar, this, "calendar")) {
+    if (!LayerShellPopup::configure(calendar, this)) {
         qWarning("dumbar: could not configure the calendar popup");
     } else {
         qCDebug(lcDumbar) << "calendar popup configured"

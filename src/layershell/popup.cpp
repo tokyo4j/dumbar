@@ -10,7 +10,6 @@ namespace LayerShellPopup
 {
 bool configure(QWidget *popup,
                QWidget *anchor,
-               const char *name,
                Qt::Edges anchorEdges,
                Qt::Edges gravityEdges)
 {
@@ -44,7 +43,6 @@ bool configure(QWidget *popup,
                             QVariant::fromValue(1u | 2u | 4u | 8u));
 
     qCDebug(lcDumbar) << "configured layer-shell popup"
-                      << "name=" << name
                       << "popupWindow=" << static_cast<void *>(popupWindow)
                       << "parentWindow=" << static_cast<void *>(panelWindow)
                       << "anchor=" << anchorEdges

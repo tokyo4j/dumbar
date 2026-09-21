@@ -58,6 +58,4 @@ private:
     QPointer<TaskButton> m_draggedButton;
     QPoint m_lastDragPosition;
     int m_dropIndex = -1;
-    int m_lastLoggedButtonWidth = -1;
-    int m_lastLoggedButtonCount = -1;
 };
