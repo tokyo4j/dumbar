@@ -1,0 +1,45 @@
+# Builds the commit checked out in the enclosing repository:
+#   cd archlinux && makepkg -si
+
+pkgname=dumbar
+pkgver=v0.0.1.r7.g548e1c5
+pkgrel=1
+pkgdesc='A simple Wayland panel and taskbar built with GTK 4'
+arch=('x86_64')
+url='https://github.com/tokyo4j/dumbar'
+license=('MIT')
+depends=(
+  'glib2'
+  'glibmm-2.68'
+  'gtk4'
+  'gtk4-layer-shell'
+  'gtkmm-4.0'
+  'libpulse'
+  'libsigc++-3.0'
+  'wayland'
+)
+makedepends=(
+  'cmake'
+  'git'
+  'ninja'
+  'pkgconf'
+)
+source=("dumbar::git+file://$startdir/..")
+sha256sums=('SKIP')
+
+pkgver() {
+  cd dumbar
+  git describe --long --tags | sed 's/\([^-]*-g\)/r\1/;s/-/./g'
+}
+
+build() {
+  cmake -S dumbar -B build -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=/usr
+  cmake --build build
+}
+
+package() {
+  DESTDIR="$pkgdir" cmake --install build
+  install -Dm644 dumbar/LICENSE -t "$pkgdir/usr/share/licenses/dumbar"
+}
