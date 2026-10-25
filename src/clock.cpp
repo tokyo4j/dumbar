@@ -1,83 +1,29 @@
 #include "clock.h"
 
-#include "dumbar.h"
-#include "layershell/popup.h"
-#include "layershell/layershelltooltip.h"
+#include "config.h"
 
-#include <QCalendarWidget>
-#include <QDateTime>
-#include <QScreen>
+#include <glibmm/main.h>
 
-Clock::Clock(QWidget *parent)
-    : QToolButton(parent)
+Clock::Clock()
 {
-    setAutoRaise(true);
-    setFocusPolicy(Qt::NoFocus);
-    setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
-    connect(this, &QToolButton::clicked, this, &Clock::showCalendar);
-    m_tooltip = new LayerShellTooltip(this, this);
-    connect(&m_timer, &QTimer::timeout, this, [this] {
-        updateClock();
-        scheduleNextUpdate();
-    });
-    updateClock();
-    scheduleNextUpdate();
+    set_focus_on_click(false);
+    set_child(m_label);
+
+    m_calendar.set_show_week_numbers(true);
+    m_popover.set_child(m_calendar);
+    m_popover.set_has_arrow(false);
+    m_popover.signal_show().connect([this] { m_calendar.select_day(Glib::DateTime::create_now_local()); });
+    set_popover(m_popover);
+
+    tick();
 }
 
-void Clock::updateClock()
+void Clock::tick()
 {
-    const QDateTime now = QDateTime::currentDateTime();
-    setText(now.toString(QString::fromLatin1(Config::kClockFormat)));
-    m_tooltip->setText(now.toString(QString::fromLatin1(Config::kClockTooltipFormat)));
-}
+    const Glib::DateTime now = Glib::DateTime::create_now_local();
+    m_label.set_text(now.format(Config::kClockFormat));
+    set_tooltip_text(now.format(Config::kClockTooltipFormat));
 
-void Clock::showCalendar()
-{
-    m_tooltip->close();
-
-    if (m_calendar) {
-        qCDebug(lcDumbar) << "closing calendar popup";
-        m_calendar->close();
-        return;
-    }
-
-    auto *calendar = new QCalendarWidget;
-    calendar->setAttribute(Qt::WA_DeleteOnClose);
-    calendar->setWindowFlags(Qt::Popup | Qt::FramelessWindowHint);
-    calendar->setSelectedDate(QDate::currentDate());
-    calendar->setFocusPolicy(Qt::StrongFocus);
-    calendar->setStyleSheet(Config::calendarStyleSheet());
-    m_calendar = calendar;
-
-    QWidget *panel = window();
-    QScreen *panelScreen = panel ? panel->screen() : nullptr;
-    qCDebug(lcDumbar) << "opening calendar popup"
-                           << "screen=" << (panelScreen ? panelScreen->name() : QStringLiteral("<null>"))
-                           << "screenGeometry=" << (panelScreen ? panelScreen->geometry() : QRect())
-                           << "clockGeometryInPanel=" << (panel ? QRect(mapTo(panel, QPoint(0, 0)), size()) : QRect());
-
-    if (!LayerShellPopup::configure(calendar, this)) {
-        qWarning("dumbar: could not configure the calendar popup");
-    } else {
-        qCDebug(lcDumbar) << "calendar popup configured"
-                           << "requestedSize=" << calendar->sizeHint();
-    }
-
-    connect(calendar, &QObject::destroyed, this, [this] {
-        qCDebug(lcDumbar) << "calendar popup destroyed";
-        m_calendar = nullptr;
-    });
-    calendar->show();
-    calendar->setFocus();
-    qCDebug(lcDumbar) << "calendar popup shown"
-                           << "geometry=" << calendar->geometry();
-}
-
-void Clock::scheduleNextUpdate()
-{
-    const QDateTime now = QDateTime::currentDateTime();
-    const int elapsedInMinute = now.time().second() * 1000 + now.time().msec();
-    const int delay = qMax(100, 60000 - elapsedInMinute);
-    m_timer.setSingleShot(true);
-    m_timer.start(delay);
+    const int elapsedInMinute = now.get_second() * 1000 + now.get_microsecond() / 1000;
+    Glib::signal_timeout().connect_once(sigc::mem_fun(*this, &Clock::tick), 60000 - elapsedInMinute);
 }

@@ -1,37 +1,34 @@
 #pragma once
 
-#include <QWidget>
+#include "audio.h"
+#include "battery.h"
+#include "clock.h"
+#include "taskbar.h"
+#include "tray.h"
 
-class Audio;
-class Battery;
-class Clock;
+#include <gdkmm/monitor.h>
+#include <gtkmm/box.h>
+#include <gtkmm/window.h>
+
 class IconResolver;
-class TaskBar;
+class StatusNotifierHost;
 class ToplevelManager;
-class Tray;
-class QScreen;
-struct wl_output;
 
-class Panel final : public QWidget
+// A layer-shell bar at the top of one monitor.
+class Panel final : public Gtk::Window
 {
-    Q_OBJECT
-
 public:
-    Panel(ToplevelManager *toplevelManager,
-          IconResolver *icons,
-          QScreen *screen,
-          QWidget *parent = nullptr);
+    Panel(const Glib::RefPtr<Gdk::Monitor> &monitor,
+          ToplevelManager &toplevels,
+          IconResolver &icons,
+          StatusNotifierHost &statusNotifierHost,
+          AudioBackend &audioBackend);
 
 private:
-    void configureLayerShell();
-
-    IconResolver *m_icons = nullptr;
-    ToplevelManager *m_toplevelManager = nullptr;
-    QScreen *m_screen = nullptr;
-    wl_output *m_output = nullptr;
-    TaskBar *m_taskbar = nullptr;
-    Tray *m_tray = nullptr;
-    Audio *m_audio = nullptr;
-    Battery *m_battery = nullptr;
-    Clock *m_clock = nullptr;
+    Gtk::Box m_box;
+    TaskBar m_taskbar;
+    Tray m_tray;
+    Audio m_audio;
+    Battery m_battery;
+    Clock m_clock;
 };

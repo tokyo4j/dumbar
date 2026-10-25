@@ -1,43 +1,62 @@
 #pragma once
 
-#include <QWidget>
+#include <gtkmm/box.h>
+#include <gtkmm/button.h>
+#include <gtkmm/image.h>
+#include <sigc++/signal.h>
 
-class QToolButton;
-class AudioBackend;
-class LayerShellTooltip;
+#include <pulse/context.h>
+#include <pulse/glib-mainloop.h>
+#include <pulse/volume.h>
 
-class Audio final : public QWidget
+enum class AudioEndpoint {
+    Microphone,
+    Speaker,
+};
+
+// Tracks the default PulseAudio sink and source.
+class AudioBackend final
 {
-    Q_OBJECT
-
 public:
-    enum class Endpoint {
-        Microphone,
-        Speaker,
-    };
-
-    struct VolumeState {
-        double percent = 0.0;
+    struct Device {
+        pa_cvolume volume {};
         bool muted = false;
-        bool valid = false;
+
+        double percent() const;
     };
 
-    explicit Audio(QWidget *parent = nullptr);
+    AudioBackend();
+    ~AudioBackend();
+    AudioBackend(const AudioBackend &) = delete;
+    AudioBackend &operator=(const AudioBackend &) = delete;
 
-    void toggleMute(Endpoint endpoint);
-    void changeVolume(Endpoint endpoint, double delta);
+    const Device &device(AudioEndpoint endpoint) const;
+    void toggleMute(AudioEndpoint endpoint);
+    void changeVolume(AudioEndpoint endpoint, double delta);
 
-private slots:
-    void backendStateChanged();
+    sigc::signal<void()> changed;
 
 private:
-    void updateButtons();
+    void refresh();
 
-    AudioBackend *m_backend = nullptr;
-    LayerShellTooltip *m_microphoneTooltip = nullptr;
-    LayerShellTooltip *m_speakerTooltip = nullptr;
-    VolumeState m_microphone;
-    VolumeState m_speaker;
-    QToolButton *m_microphoneButton = nullptr;
-    QToolButton *m_speakerButton = nullptr;
+    pa_glib_mainloop *m_mainloop;
+    pa_context *m_context;
+    Device m_speaker;
+    Device m_microphone;
+};
+
+class Audio final : public Gtk::Box
+{
+public:
+    explicit Audio(AudioBackend &backend);
+
+private:
+    void setupButton(Gtk::Button &button, Gtk::Image &icon, AudioEndpoint endpoint);
+    void update();
+
+    AudioBackend &m_backend;
+    Gtk::Button m_microphone;
+    Gtk::Image m_microphoneIcon;
+    Gtk::Button m_speaker;
+    Gtk::Image m_speakerIcon;
 };

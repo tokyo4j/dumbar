@@ -1,79 +1,41 @@
 #include "iconresolver.h"
 
-#include <QDir>
-#include <QFileInfo>
-#include <QSettings>
-#include <QStandardPaths>
+#include <giomm/desktopappinfo.h>
+#include <giomm/themedicon.h>
 
 namespace
 {
 constexpr auto kFallbackIcon = "application-x-executable";
 
-void addIconKey(QHash<QString, QString> &icons, const QString &key, const QString &iconName)
+std::string lowercase(const std::string &text)
 {
-    if (!key.isEmpty() && !iconName.isEmpty() && !icons.contains(key))
-        icons.insert(key, iconName);
+    return Glib::ustring(text).lowercase();
 }
 }
 
-IconResolver::IconResolver(QObject *parent)
-    : QObject(parent)
+IconResolver::IconResolver()
 {
-    scanDesktopFiles();
-}
+    for (const auto &appInfo : Gio::AppInfo::get_all()) {
+        const auto desktopAppInfo = std::dynamic_pointer_cast<Gio::DesktopAppInfo>(appInfo);
+        const auto icon = appInfo->get_icon();
+        if (!desktopAppInfo || !icon)
+            continue;
 
-void IconResolver::scanDesktopFiles()
-{
-    const QStringList locations = QStandardPaths::standardLocations(QStandardPaths::ApplicationsLocation);
-    for (const QString &location : locations) {
-        const QDir directory(location);
-        const QFileInfoList files = directory.entryInfoList({QStringLiteral("*.desktop")}, QDir::Files | QDir::Readable,
-                                                             QDir::Name);
-        for (const QFileInfo &file : files) {
-            QSettings desktop(file.absoluteFilePath(), QSettings::IniFormat);
-            const QString iconName = desktop.value(QStringLiteral("Desktop Entry/Icon")).toString();
-            if (iconName.isEmpty() || desktop.value(QStringLiteral("Desktop Entry/Hidden"), false).toBool())
-                continue;
+        std::string id = lowercase(appInfo->get_id());
+        if (id.ends_with(".desktop"))
+            id.resize(id.size() - std::string_view(".desktop").size());
+        m_icons.try_emplace(id, icon);
 
-            const QString fileName = file.fileName();
-            addIconKey(m_iconNames, fileName, iconName);
-            addIconKey(m_iconNames, file.completeBaseName(), iconName);
-            addIconKey(m_iconNames,
-                       desktop.value(QStringLiteral("Desktop Entry/StartupWMClass")).toString(),
-                       iconName);
-        }
+        const std::string wmClass = desktopAppInfo->get_startup_wm_class();
+        if (!wmClass.empty())
+            m_icons.try_emplace(lowercase(wmClass), icon);
     }
 }
 
-QIcon IconResolver::iconForAppId(const QString &appId)
+Glib::RefPtr<Gio::Icon> IconResolver::iconForAppId(const std::string &appId) const
 {
-    if (m_cache.contains(appId))
-        return m_cache.value(appId);
-
-    QString iconName;
-    const QFileInfo appInfo(appId);
-    const QStringList candidates = {
-        appId,
-        appId + QStringLiteral(".desktop"),
-        appInfo.fileName(),
-        appInfo.completeBaseName(),
-    };
-    for (const QString &candidate : candidates) {
-        if (m_iconNames.contains(candidate)) {
-            iconName = m_iconNames.value(candidate);
-            break;
-        }
-    }
-
-    if (iconName.isEmpty())
-        iconName = m_iconNames.value(appId);
-    if (iconName.isEmpty())
-        iconName = QString::fromLatin1(kFallbackIcon);
-
-    QIcon icon = QIcon::fromTheme(iconName);
-    if (icon.isNull() && iconName != QLatin1String(kFallbackIcon))
-        icon = QIcon::fromTheme(QString::fromLatin1(kFallbackIcon));
-
-    m_cache.insert(appId, icon);
-    return icon;
+    const auto it = m_icons.find(lowercase(appId));
+    if (it == m_icons.end())
+        return Gio::ThemedIcon::create(kFallbackIcon);
+    return it->second;
 }

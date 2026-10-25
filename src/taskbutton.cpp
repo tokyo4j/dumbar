@@ -1,192 +1,101 @@
 #include "taskbutton.h"
 
-#include "dumbar.h"
+#include "config.h"
 #include "iconresolver.h"
-#include "layershell/layershelltooltip.h"
 #include "toplevelmanager.h"
 
-#include <QApplication>
-#include <QDrag>
-#include <QFont>
-#include <QMimeData>
-#include <QMenu>
-#include <QMouseEvent>
-#include <QPainter>
+#include <giomm/menu.h>
+#include <giomm/simpleactiongroup.h>
+#include <gtkmm/gestureclick.h>
 
-namespace
+TaskButton::TaskButton(Toplevel &toplevel, IconResolver &icons)
+    : m_toplevel(toplevel)
+    , m_icons(icons)
+    , m_box(Gtk::Orientation::HORIZONTAL, 4)
 {
-constexpr auto kTaskButtonMimeType = "application/x-dumbar-task-button";
+    add_css_class("task");
+    set_focus_on_click(false);
+
+    m_icon.set_pixel_size(Config::kIconSize);
+    m_title.set_ellipsize(Pango::EllipsizeMode::END);
+    m_title.set_xalign(0);
+    m_title.set_hexpand(true);
+    m_box.append(m_icon);
+    m_box.append(m_title);
+    set_child(m_box);
+
+    signal_clicked().connect([this] {
+        if (m_toplevel.activated())
+            m_toplevel.setMinimized(true);
+        else
+            m_toplevel.activate();
+    });
+
+    // Gtk::Button only handles the primary button.
+    const auto click = Gtk::GestureClick::create();
+    click->set_button(0);
+    click->signal_pressed().connect([this, click = click.get()](int, double x, double y) {
+        pressed(click->get_current_button(), x, y);
+    });
+    add_controller(click);
+
+    const auto actions = Gio::SimpleActionGroup::create();
+    m_minimizeAction = actions->add_action_bool("minimize", [this] {
+        m_toplevel.setMinimized(!m_toplevel.minimized());
+    });
+    m_maximizeAction = actions->add_action_bool("maximize", [this] {
+        m_toplevel.setMaximized(!m_toplevel.maximized());
+    });
+    m_fullscreenAction = actions->add_action_bool("fullscreen", [this] {
+        m_toplevel.setFullscreen(!m_toplevel.fullscreen());
+    });
+    m_fullscreenAction->set_enabled(m_toplevel.supportsFullscreen());
+    actions->add_action("close", [this] { m_toplevel.close(); });
+    insert_action_group("task", actions);
+
+    const auto menu = Gio::Menu::create();
+    const auto states = Gio::Menu::create();
+    states->append("Minimize", "task.minimize");
+    states->append("Maximize", "task.maximize");
+    states->append("Fullscreen", "task.fullscreen");
+    menu->append_section(states);
+    menu->append("Close", "task.close");
+    m_menu.set_menu_model(menu);
+    m_menu.set_has_arrow(false);
+    m_menu.set_parent(*this);
+
+    refresh();
 }
 
-TaskButton::TaskButton(Toplevel *toplevel, IconResolver *icons, QWidget *parent)
-    : QToolButton(parent)
-    , m_toplevel(toplevel)
-    , m_icons(icons)
+TaskButton::~TaskButton()
 {
-    setAutoRaise(true);
-    setFocusPolicy(Qt::NoFocus);
-    setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
-    setMinimumWidth(0);
-    setToolButtonStyle(Qt::ToolButtonIconOnly);
-
-    QFont taskButtonFont = font();
-    taskButtonFont.setPixelSize(Config::kFontSize);
-    setFont(taskButtonFont);
-
-    connect(this, &QToolButton::clicked, this, &TaskButton::activateOrMinimize);
-    m_tooltip = new LayerShellTooltip(this, this);
-    refresh();
+    m_menu.unparent();
 }
 
 void TaskButton::refresh()
 {
-    if (!m_toplevel)
-        return;
-
-    m_icon = m_icons ? m_icons->iconForAppId(m_toplevel->appId()) : QIcon();
-    m_tooltip->setText(m_toplevel->title());
-    update();
-}
-
-void TaskButton::activateOrMinimize()
-{
-    if (!m_toplevel)
-        return;
-
-    if (m_toplevel->activated())
-        m_toplevel->setMinimized();
+    m_icon.set(m_icons.iconForAppId(m_toplevel.appId()));
+    m_title.set_text(m_toplevel.title());
+    set_tooltip_text(m_toplevel.title());
+    if (m_toplevel.activated() && !m_toplevel.minimized())
+        add_css_class("active");
     else
-        m_toplevel->activate(nullptr);
+        remove_css_class("active");
+
+    m_minimizeAction->set_state(Glib::Variant<bool>::create(m_toplevel.minimized()));
+    m_maximizeAction->set_state(Glib::Variant<bool>::create(m_toplevel.maximized()));
+    m_fullscreenAction->set_state(Glib::Variant<bool>::create(m_toplevel.fullscreen()));
 }
 
-void TaskButton::closeToplevel()
+void TaskButton::pressed(guint button, double x, double y)
 {
-    if (m_toplevel)
-        m_toplevel->close();
-}
-
-void TaskButton::paintEvent(QPaintEvent *event)
-{
-    Q_UNUSED(event)
-    if (!m_toplevel)
-        return;
-
-    QPainter painter(this);
-    painter.setRenderHint(QPainter::TextAntialiasing);
-
-    const bool active = m_toplevel->activated() && !m_toplevel->minimized();
-    const bool hovered = underMouse();
-    if (active)
-        painter.fillRect(rect(), QColor(0x20, 0x75, 0xba));
-    else if (hovered)
-        painter.fillRect(rect(), QColor(255, 255, 255, 18));
-
-    const int iconX = Config::kTaskButtonIconPadding;
-    const int iconY = (height() - Config::kIconSize) / 2;
-    if (!m_icon.isNull())
-        m_icon.paint(&painter,
-                     QRect(iconX, iconY, Config::kIconSize, Config::kIconSize));
-
-    const int textX = iconX + Config::kIconSize + Config::kIconTextGap;
-    const int textWidth = width() - textX - Config::kTaskButtonTextPadding;
-    if (textWidth > 8) {
-        const QFontMetrics metrics(font());
-        const QString title = metrics.elidedText(m_toplevel->title(), Qt::ElideRight, textWidth);
-        painter.setPen(palette().color(QPalette::ButtonText));
-        painter.drawText(QRect(textX, 0, textWidth, height()), Qt::AlignVCenter | Qt::AlignLeft, title);
+    switch (button) {
+    case GDK_BUTTON_MIDDLE:
+        m_toplevel.close();
+        break;
+    case GDK_BUTTON_SECONDARY:
+        m_menu.set_pointing_to(Gdk::Rectangle(x, y, 1, 1));
+        m_menu.popup();
+        break;
     }
-
-    if (m_dragging)
-        painter.fillRect(rect(), QColor(0, 0, 0, 96));
-}
-
-void TaskButton::mousePressEvent(QMouseEvent *event)
-{
-    switch (event->button()) {
-    case Qt::LeftButton:
-        m_pressPosition = event->position().toPoint();
-        m_dragStarted = false;
-        QToolButton::mousePressEvent(event);
-        return;
-    case Qt::MiddleButton:
-        closeToplevel();
-        event->accept();
-        return;
-    case Qt::RightButton: {
-        QMenu menu(this);
-        QFont menuFont = menu.font();
-        menuFont.setPixelSize(Config::kFontSize);
-        menu.setFont(menuFont);
-        menu.setStyleSheet(Config::menuStyleSheet());
-        menu.addAction(tr("Close"), this, &TaskButton::closeToplevel);
-        menu.exec(event->globalPosition().toPoint());
-        event->accept();
-        return;
-    }
-    default:
-        QToolButton::mousePressEvent(event);
-        return;
-    }
-}
-
-void TaskButton::mouseMoveEvent(QMouseEvent *event)
-{
-    const QPoint position = event->position().toPoint();
-    if (!m_dragStarted && (event->buttons() & Qt::LeftButton)
-        && (position - m_pressPosition).manhattanLength() >= QApplication::startDragDistance()) {
-        m_dragStarted = true;
-        setDown(false);
-        startDrag();
-        return;
-    }
-
-    QToolButton::mouseMoveEvent(event);
-}
-
-void TaskButton::mouseReleaseEvent(QMouseEvent *event)
-{
-    if (event->button() == Qt::LeftButton && m_dragStarted) {
-        m_dragStarted = false;
-        event->accept();
-        return;
-    }
-
-    QToolButton::mouseReleaseEvent(event);
-}
-
-void TaskButton::startDrag()
-{
-    auto *mimeData = new QMimeData;
-    mimeData->setData(kTaskButtonMimeType, QByteArrayLiteral("move"));
-
-    m_dragging = true;
-    update();
-
-    QPixmap pixmap(Config::kDragChipSize, Config::kDragChipSize);
-    pixmap.fill(Qt::transparent);
-    QPainter painter(&pixmap);
-    painter.setRenderHint(QPainter::Antialiasing);
-    painter.setBrush(QColor(32, 32, 32, 235));
-    painter.setPen(QPen(QColor(255, 255, 255, 70), 1));
-    painter.drawRoundedRect(QRectF(0.5,
-                                   0.5,
-                                   Config::kDragChipSize - 1,
-                                   Config::kDragChipSize - 1),
-                            Config::kDragChipRadius,
-                            Config::kDragChipRadius);
-    if (!m_icon.isNull())
-        m_icon.paint(&painter,
-                     QRect((Config::kDragChipSize - Config::kIconSize) / 2,
-                           (Config::kDragChipSize - Config::kIconSize) / 2,
-                           Config::kIconSize,
-                           Config::kIconSize));
-
-    auto *drag = new QDrag(this);
-    drag->setMimeData(mimeData);
-    drag->setPixmap(pixmap);
-    drag->setHotSpot(QPoint(Config::kDragChipSize / 2, Config::kDragChipSize / 2));
-    drag->exec(Qt::MoveAction);
-
-    m_dragging = false;
-    update();
 }

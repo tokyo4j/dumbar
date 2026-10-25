@@ -1,51 +1,56 @@
 #pragma once
 
-#include <QDBusConnection>
-#include <QDBusMessage>
-#include <QToolButton>
+#include <gdkmm/texture.h>
+#include <giomm/dbusconnection.h>
+#include <sigc++/signal.h>
 
-class LayerShellTooltip;
+#include <string>
 
-class TrayItem final : public QToolButton
+// A StatusNotifierItem exported by an application.
+class TrayItem final
 {
-    Q_OBJECT
-
 public:
-    TrayItem(const QDBusConnection &bus, QString service, QString path, QWidget *parent = nullptr);
-    ~TrayItem() override;
+    TrayItem(Glib::RefPtr<Gio::DBus::Connection> bus, std::string service, std::string path);
+    ~TrayItem();
+    TrayItem(const TrayItem &) = delete;
+    TrayItem &operator=(const TrayItem &) = delete;
 
-    QString id() const { return m_service + m_path; }
-    QString service() const { return m_service; }
-    QString status() const { return m_status; }
-    bool hasMenu() const { return !m_menuPath.isEmpty(); }
-    bool isValid() const { return m_valid; }
-    bool isPassive() const { return m_status == QLatin1String("Passive"); }
+    std::string id() const { return m_service + m_path; }
+    const std::string &service() const { return m_service; }
+    bool passive() const { return m_status == "Passive"; }
+    bool itemIsMenu() const { return m_itemIsMenu; }
+    bool hasMenu() const { return !m_menuPath.empty(); }
+    const std::string &tooltip() const { return m_tooltip; }
+    // The icon is either a texture or, if the texture is null, a themed icon name.
+    const Glib::RefPtr<Gdk::Texture> &iconTexture() const { return m_iconTexture; }
+    const std::string &iconName() const { return m_iconName; }
 
-    QDBusMessage callMenu(const QString &method, const QVariantList &arguments = {}) const;
-    void menuEvent(int itemId) const;
+    // Reloads all properties. Returns false if the item does not respond.
+    bool refresh();
 
-public slots:
-    void refresh();
+    void activate();
+    void secondaryActivate();
+    void contextMenu();
+    void scroll(int delta);
 
-signals:
-    void updated();
-    void invalid();
-    void menuRequested();
+    // Returns the current com.canonical.dbusmenu layout, (ia{sv}av). Throws Glib::Error.
+    Glib::VariantBase menuLayout();
+    void menuItemClicked(int menuItemId);
 
-protected:
-    void mousePressEvent(QMouseEvent *event) override;
-    void wheelEvent(QWheelEvent *event) override;
+    sigc::signal<void()> changed;
 
 private:
-    void invoke(const QString &method, const QVariantList &arguments = {}) const;
-    void applyProperties(const QVariantMap &properties);
+    void call(const std::string &path, const char *interface, const char *method, GVariant *parameters);
 
-    QDBusConnection m_bus;
-    QString m_service;
-    QString m_path;
-    QString m_status;
-    QString m_menuPath;
+    Glib::RefPtr<Gio::DBus::Connection> m_bus;
+    std::string m_service;
+    std::string m_path;
+    guint m_subscription;
+
+    std::string m_status;
+    std::string m_iconName;
+    Glib::RefPtr<Gdk::Texture> m_iconTexture;
+    std::string m_tooltip;
+    std::string m_menuPath;
     bool m_itemIsMenu = false;
-    bool m_valid = false;
-    LayerShellTooltip *m_tooltip = nullptr;
 };

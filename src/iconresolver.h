@@ -1,21 +1,19 @@
 #pragma once
 
-#include <QHash>
-#include <QIcon>
-#include <QObject>
+#include <giomm/icon.h>
 
-class IconResolver final : public QObject
+#include <string>
+#include <unordered_map>
+
+// Maps Wayland app IDs to the icons of their desktop entries.
+class IconResolver final
 {
-    Q_OBJECT
-
 public:
-    explicit IconResolver(QObject *parent = nullptr);
+    IconResolver();
 
-    QIcon iconForAppId(const QString &appId);
+    Glib::RefPtr<Gio::Icon> iconForAppId(const std::string &appId) const;
 
 private:
-    void scanDesktopFiles();
-
-    QHash<QString, QString> m_iconNames;
-    QHash<QString, QIcon> m_cache;
+    // Keyed by lower-cased desktop file ID (without ".desktop") and StartupWMClass.
+    std::unordered_map<std::string, Glib::RefPtr<Gio::Icon>> m_icons;
 };

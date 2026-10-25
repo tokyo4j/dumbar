@@ -1,32 +1,20 @@
 #pragma once
 
-#include <QDBusConnection>
-#include <QWidget>
+#include <giomm/dbusproxy.h>
+#include <gtkmm/box.h>
+#include <gtkmm/image.h>
+#include <gtkmm/label.h>
 
-class QLabel;
-class LayerShellTooltip;
-
-class Battery final : public QWidget
+// Shows UPower's display device, which aggregates all batteries.
+class Battery final : public Gtk::Box
 {
-    Q_OBJECT
-
 public:
-    explicit Battery(QWidget *parent = nullptr);
-
-    static QString formatDuration(qint64 seconds);
-
-private slots:
-    void propertiesChanged(const QString &interfaceName,
-                           const QVariantMap &changed,
-                           const QStringList &invalidated);
+    Battery();
 
 private:
     void refresh();
-    void applyProperties(const QVariantMap &properties);
 
-    QDBusConnection m_bus;
-    LayerShellTooltip *m_tooltip = nullptr;
-    QLabel *m_icon = nullptr;
-    QLabel *m_text = nullptr;
-    bool m_warned = false;
+    Glib::RefPtr<Gio::DBus::Proxy> m_proxy;
+    Gtk::Image m_icon;
+    Gtk::Label m_label;
 };

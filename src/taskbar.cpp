@@ -1,285 +1,147 @@
 #include "taskbar.h"
 
-#include "dumbar.h"
-#include "iconresolver.h"
+#include "config.h"
 #include "taskbutton.h"
 #include "toplevelmanager.h"
 
-#include <QDragEnterEvent>
-#include <QDragLeaveEvent>
-#include <QDragMoveEvent>
-#include <QDropEvent>
-#include <QHBoxLayout>
-#include <QResizeEvent>
+#include <gtkmm/dragsource.h>
+#include <gtkmm/droptarget.h>
 
 #include <algorithm>
+#include <cassert>
 
-int taskButtonWidth(int availableWidth, int windowCount)
-{
-    if (windowCount <= 0)
-        return 0;
-    return qMin(Config::kTaskButtonPreferredWidth, qMax(0, availableWidth / windowCount));
-}
-
-TaskBar::TaskBar(ToplevelManager *manager, IconResolver *icons, wl_output *output, QWidget *parent)
-    : QWidget(parent)
-    , m_icons(icons)
+TaskBar::TaskBar(ToplevelManager &manager, IconResolver &icons, wl_output *output)
+    : m_icons(icons)
     , m_output(output)
-    , m_layout(new QHBoxLayout(this))
 {
-    qCDebug(lcDumbar) << "creating taskbar"
-                       << "output=" << static_cast<void *>(m_output)
-                       << "manager=" << static_cast<void *>(manager);
-    m_layout->setContentsMargins(0, 0, 0, 0);
-    m_layout->setSpacing(0);
-    m_layout->setAlignment(Qt::AlignLeft);
-    // The panel gives the taskbar the space left over by the right-hand
-    // widgets.  Do not let the sum of the task buttons' preferred widths
-    // become the panel's preferred width once enough windows are open.
-    setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Expanding);
-    setMinimumWidth(0);
-    setAcceptDrops(true);
+    set_hexpand(true);
+    set_overflow(Gtk::Overflow::HIDDEN);
 
-    m_dropIndicator = new QWidget(this);
-    m_dropIndicator->setObjectName(QStringLiteral("dropIndicator"));
-    m_dropIndicator->setAttribute(Qt::WA_TransparentForMouseEvents);
-    m_dropIndicator->setFixedSize(Config::kDropIndicatorWidth, Config::kDropIndicatorHeight);
-    m_dropIndicator->setStyleSheet(Config::dropIndicatorStyleSheet());
-    m_dropIndicator->hide();
+    manager.toplevelUpdated.connect(sigc::mem_fun(*this, &TaskBar::updateToplevel));
+    manager.toplevelRemoved.connect(sigc::mem_fun(*this, &TaskBar::removeToplevel));
+    for (const auto &toplevel : manager.toplevels())
+        updateToplevel(*toplevel);
 
-    if (!manager) {
+    const auto target = Gtk::DropTarget::create(G_TYPE_STRING, Gdk::DragAction::MOVE);
+    target->signal_enter().connect([this](double x, double) { return dragMotion(x); }, false);
+    target->signal_motion().connect([this](double x, double) { return dragMotion(x); }, false);
+    // The buttons are already in place when dropped.
+    target->signal_drop().connect([this](const Glib::ValueBase &, double, double) { return m_dragged != nullptr; },
+                                  false);
+    add_controller(target);
+}
+
+TaskBar::~TaskBar()
+{
+    for (const auto &button : m_buttons)
+        button->unparent();
+}
+
+Gtk::SizeRequestMode TaskBar::get_request_mode_vfunc() const
+{
+    return Gtk::SizeRequestMode::CONSTANT_SIZE;
+}
+
+void TaskBar::measure_vfunc(Gtk::Orientation orientation, int, int &minimum, int &natural, int &, int &) const
+{
+    // The panel gives the taskbar whatever the other widgets leave, so the
+    // buttons must not contribute to the panel's width.
+    minimum = 0;
+    natural = 0;
+    if (orientation == Gtk::Orientation::HORIZONTAL)
         return;
+
+    for (const auto &button : m_buttons) {
+        if (!button->get_visible())
+            continue;
+        int buttonMinimum, buttonNatural, ignored;
+        button->measure(orientation, -1, buttonMinimum, buttonNatural, ignored, ignored);
+        minimum = std::max(minimum, buttonMinimum);
+        natural = std::max(natural, buttonNatural);
     }
-
-    connect(manager, &ToplevelManager::toplevelAdded, this, &TaskBar::addToplevel);
-    connect(manager, &ToplevelManager::toplevelRemoved, this, &TaskBar::removeToplevel);
-    connect(manager, &ToplevelManager::availableChanged, this, &TaskBar::managerAvailabilityChanged);
-
-    for (Toplevel *toplevel : manager->toplevels())
-        addToplevel(toplevel);
-    managerAvailabilityChanged(manager->isAvailable());
 }
 
-void TaskBar::resizeEvent(QResizeEvent *event)
+void TaskBar::size_allocate_vfunc(int width, int height, int)
 {
-    QWidget::resizeEvent(event);
-    recalculateWidths();
-    if (m_draggedButton && m_dropIndicator->isVisible())
-        updateDropIndicator(m_lastDragPosition, m_draggedButton);
-}
-
-void TaskBar::addToplevel(Toplevel *toplevel)
-{
-    if (!toplevel || buttonFor(toplevel))
+    const auto visibleCount = std::ranges::count_if(m_buttons, [](const auto &button) {
+        return button->get_visible();
+    });
+    if (visibleCount == 0)
         return;
 
-    auto *button = new TaskButton(toplevel, m_icons, this);
-    button->hide();
-    m_buttons.append(button);
-    m_layout->addWidget(button, 0, Qt::AlignLeft);
-    connect(toplevel, &Toplevel::updated, this, &TaskBar::updateToplevel);
-    qCDebug(lcDumbar) << "tracking toplevel"
-                             << "output=" << static_cast<void *>(m_output)
-                             << "title=" << toplevel->title();
-    updateToplevel(toplevel);
-    recalculateWidths();
-}
-
-void TaskBar::removeToplevel(Toplevel *toplevel)
-{
-    TaskButton *button = buttonFor(toplevel);
-    qCDebug(lcDumbar) << "removing toplevel from taskbar"
-                             << "output=" << static_cast<void *>(m_output)
-                             << "title=" << (toplevel ? toplevel->title() : QStringLiteral("<null>"))
-                             << "hadButton=" << (button != nullptr);
-    if (!button)
-        return;
-
-    if (m_draggedButton == button)
-        clearDropIndicator();
-    m_buttons.removeOne(button);
-    m_layout->removeWidget(button);
-    button->deleteLater();
-    recalculateWidths();
-}
-
-void TaskBar::updateToplevel(Toplevel *toplevel)
-{
-    TaskButton *button = buttonFor(toplevel);
-    if (!button)
-        return;
-
-    const bool shouldShow = toplevel->enteredOutput(m_output);
-    const bool wasShown = !button->isHidden();
-    qCDebug(lcDumbar) << "taskbar output filter"
-                             << "output=" << static_cast<void *>(m_output)
-                             << "title=" << toplevel->title()
-                             << "enteredOutput=" << shouldShow
-                             << "hasButton=" << (button != nullptr);
-    button->setVisible(shouldShow);
-    button->refresh();
-    if (wasShown != shouldShow)
-        recalculateWidths();
-}
-
-void TaskBar::managerAvailabilityChanged(bool available)
-{
-    qCDebug(lcDumbar) << "toplevel manager availability changed"
-                             << "output=" << static_cast<void *>(m_output)
-                             << "available=" << available;
-    // An empty taskbar keeps the optional right-hand widgets aligned to the
-    // right edge even when the compositor has no foreign-toplevel protocol.
-    setVisible(true);
-    if (available)
-        recalculateWidths();
-}
-
-void TaskBar::recalculateWidths()
-{
-    const QList<TaskButton *> buttons = visibleButtons();
-    const int width = taskButtonWidth(contentsRect().width(), buttons.size());
-    for (TaskButton *button : buttons)
-        button->setFixedWidth(width);
-}
-
-void TaskBar::dragEnterEvent(QDragEnterEvent *event)
-{
-    acceptDrag(event);
-}
-
-void TaskBar::dragLeaveEvent(QDragLeaveEvent *event)
-{
-    Q_UNUSED(event)
-    clearDropIndicator();
-}
-
-void TaskBar::dragMoveEvent(QDragMoveEvent *event)
-{
-    acceptDrag(event);
-}
-
-void TaskBar::dropEvent(QDropEvent *event)
-{
-    if (!acceptDrag(event))
-        return;
-
-    reorderButton(m_draggedButton, m_dropIndex);
-    event->setDropAction(Qt::MoveAction);
-    event->accept();
-    clearDropIndicator();
-}
-
-TaskButton *TaskBar::buttonFor(Toplevel *toplevel) const
-{
-    for (TaskButton *button : m_buttons) {
-        if (button->toplevel() == toplevel)
-            return button;
+    const int preferredWidth = std::min<int>(Config::kTaskButtonPreferredWidth, width / visibleCount);
+    int x = 0;
+    for (const auto &button : m_buttons) {
+        if (!button->get_visible())
+            continue;
+        // Buttons that do not fit are clipped rather than underallocated.
+        int minimum, ignored;
+        button->measure(Gtk::Orientation::HORIZONTAL, -1, minimum, ignored, ignored, ignored);
+        const int buttonWidth = std::max(preferredWidth, minimum);
+        button->size_allocate(Gtk::Allocation(x, 0, buttonWidth, height), -1);
+        x += buttonWidth;
     }
-    return nullptr;
 }
 
-QList<TaskButton *> TaskBar::visibleButtons(TaskButton *excluded) const
+void TaskBar::updateToplevel(Toplevel &toplevel)
 {
-    QList<TaskButton *> buttons;
-    for (TaskButton *button : m_buttons) {
-        if (!button->isHidden() && button != excluded)
-            buttons.append(button);
+    auto it = std::ranges::find(m_buttons, &toplevel, [](const auto &button) { return &button->toplevel(); });
+    if (it == m_buttons.end()) {
+        auto button = std::make_unique<TaskButton>(toplevel, m_icons);
+        button->set_parent(*this);
+        addDragSource(*button);
+        it = m_buttons.insert(m_buttons.end(), std::move(button));
+    } else {
+        (*it)->refresh();
     }
-    return buttons;
+    (*it)->set_visible(toplevel.onOutput(m_output));
 }
 
-TaskButton *TaskBar::dragSource(const QDropEvent *event) const
+void TaskBar::removeToplevel(Toplevel &toplevel)
 {
-    if (!event)
-        return nullptr;
-
-    auto *source = qobject_cast<TaskButton *>(event->source());
-    if (!source || source->parentWidget() != this || !m_buttons.contains(source))
-        return nullptr;
-
-    return source;
+    const auto it = std::ranges::find(m_buttons, &toplevel, [](const auto &button) { return &button->toplevel(); });
+    assert(it != m_buttons.end());
+    if (it->get() == m_dragged)
+        m_dragged = nullptr;
+    (*it)->unparent();
+    m_buttons.erase(it);
 }
 
-bool TaskBar::acceptDrag(QDropEvent *event)
+void TaskBar::addDragSource(TaskButton &button)
 {
-    TaskButton *source = dragSource(event);
-    if (!source) {
-        clearDropIndicator();
-        event->ignore();
-        return false;
-    }
-
-    m_draggedButton = source;
-    updateDropIndicator(event->position().toPoint(), source);
-    event->acceptProposedAction();
-    return true;
+    const auto source = Gtk::DragSource::create();
+    source->set_actions(Gdk::DragAction::MOVE);
+    source->signal_prepare().connect([this, &button](double, double) {
+        m_dragged = &button;
+        Glib::Value<Glib::ustring> value;
+        value.init(value.value_type());
+        return Gdk::ContentProvider::create(value);
+    }, false);
+    source->signal_drag_end().connect([this](const Glib::RefPtr<Gdk::Drag> &, bool) { m_dragged = nullptr; });
+    button.add_controller(source);
 }
 
-void TaskBar::updateDropIndicator(const QPoint &position, TaskButton *source)
+Gdk::DragAction TaskBar::dragMotion(double x)
 {
-    if (!source)
-        return;
+    // Only buttons of this taskbar can be dragged here.
+    if (!m_dragged)
+        return {};
 
-    const QList<TaskButton *> buttons = visibleButtons(source);
-
-    int insertionIndex = buttons.size();
-    for (int i = 0; i < buttons.size(); ++i) {
-        if (position.x() < buttons.at(i)->geometry().center().x()) {
-            insertionIndex = i;
-            break;
+    int right = 0;
+    for (size_t i = 0; i < m_buttons.size(); ++i) {
+        if (!m_buttons[i]->get_visible())
+            continue;
+        right += m_buttons[i]->get_width();
+        if (x >= right)
+            continue;
+        if (m_buttons[i].get() != m_dragged) {
+            const auto from = std::ranges::find(m_buttons, m_dragged, &std::unique_ptr<TaskButton>::get);
+            std::unique_ptr<TaskButton> dragged = std::move(*from);
+            m_buttons.erase(from);
+            m_buttons.insert(m_buttons.begin() + i, std::move(dragged));
+            queue_allocate();
         }
+        break;
     }
-    m_dropIndex = insertionIndex;
-    m_lastDragPosition = position;
-
-    if (buttons.isEmpty()) {
-        m_dropIndicator->hide();
-        return;
-    }
-
-    const int boundary = insertionIndex < buttons.size()
-        ? buttons.at(insertionIndex)->geometry().left()
-        : buttons.constLast()->geometry().right() + 1;
-    const int indicatorX = std::clamp(boundary - Config::kDropIndicatorWidth / 2,
-                                      0,
-                                      qMax(0, width() - Config::kDropIndicatorWidth));
-    const int indicatorHeight = qMin(Config::kDropIndicatorHeight, height());
-    const int indicatorY = qMax(0, (height() - indicatorHeight) / 2);
-    m_dropIndicator->setFixedHeight(indicatorHeight);
-    m_dropIndicator->setGeometry(indicatorX,
-                                 indicatorY,
-                                 Config::kDropIndicatorWidth,
-                                 indicatorHeight);
-    m_dropIndicator->raise();
-    m_dropIndicator->show();
-}
-
-void TaskBar::clearDropIndicator()
-{
-    m_draggedButton.clear();
-    m_dropIndex = -1;
-    m_dropIndicator->hide();
-}
-
-void TaskBar::reorderButton(TaskButton *button, int insertionIndex)
-{
-    if (!button || insertionIndex < 0 || !m_buttons.contains(button))
-        return;
-
-    const QList<TaskButton *> visibleOrder = visibleButtons(button);
-    insertionIndex = qBound(0, insertionIndex, visibleOrder.size());
-    m_buttons.removeOne(button);
-
-    int orderIndex = m_buttons.size();
-    if (insertionIndex < visibleOrder.size())
-        orderIndex = m_buttons.indexOf(visibleOrder.at(insertionIndex));
-    else if (!visibleOrder.isEmpty())
-        orderIndex = m_buttons.indexOf(visibleOrder.constLast()) + 1;
-    m_buttons.insert(orderIndex, button);
-    m_layout->removeWidget(button);
-    m_layout->insertWidget(orderIndex, button, 0, Qt::AlignLeft);
-    qCDebug(lcDumbar) << "reordered task button"
-                             << "output=" << static_cast<void *>(m_output)
-                             << "title=" << button->toplevel()->title()
-                             << "insertionIndex=" << insertionIndex;
+    return Gdk::DragAction::MOVE;
 }

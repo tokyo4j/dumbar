@@ -1,107 +1,88 @@
-#include "panel.h"
+#include "audio.h"
+#include "config.h"
 #include "iconresolver.h"
-#include "dumbar.h"
+#include "panel.h"
+#include "statusnotifierhost.h"
 #include "toplevelmanager.h"
 
-#include <QApplication>
-#include <QDebug>
-#include <QHash>
-#include <QIcon>
-#include <QScreen>
-#include <QtGui/qguiapplication_platform.h>
+#include <gdk/wayland/gdkwayland.h>
+#include <gtkmm/application.h>
+#include <gtkmm/cssprovider.h>
+#include <gtkmm/settings.h>
 
-Q_LOGGING_CATEGORY(lcDumbar, "dumbar", QtWarningMsg)
+#include <memory>
+#include <vector>
 
 namespace
 {
-void configureDumbarLogging()
+// Shares one set of services between the panels of all monitors.
+class Dumbar final
 {
-    qSetMessagePattern(QStringLiteral("%{time hh:mm:ss.zzz} [%{file}:%{line}] %{message}"));
+public:
+    explicit Dumbar(Gtk::Application &application);
 
-    const QByteArray value = qgetenv("DUMBAR_DEBUG").trimmed().toLower();
-    if (value == "1" || value == "true" || value == "yes")
-        QLoggingCategory::setFilterRules(QStringLiteral("dumbar.debug=true"));
+private:
+    // Keeps m_panels in sync with the display's list of monitors.
+    void monitorsChanged(guint position, guint removed, guint added);
+
+    Gtk::Application &m_application;
+    Glib::RefPtr<Gio::ListModel> m_monitors;
+    ToplevelManager m_toplevels;
+    IconResolver m_icons;
+    StatusNotifierHost m_statusNotifierHost;
+    AudioBackend m_audioBackend;
+    std::vector<std::unique_ptr<Panel>> m_panels;
+};
+
+GdkDisplay *defaultDisplay()
+{
+    return Gdk::Display::get_default()->gobj();
 }
 
-void configureIconTheme()
+Dumbar::Dumbar(Gtk::Application &application)
+    : m_application(application)
+    , m_monitors(Gdk::Display::get_default()->get_monitors())
+    , m_toplevels(gdk_wayland_display_get_wl_display(defaultDisplay()),
+                  gdk_wayland_seat_get_wl_seat(gdk_display_get_default_seat(defaultDisplay())))
 {
-    QIcon::setThemeName(QString::fromLatin1(Config::kDefaultIconTheme));
-    qCDebug(lcDumbar) << "using default icon theme" << QIcon::themeName();
+    m_monitors->signal_items_changed().connect(sigc::mem_fun(*this, &Dumbar::monitorsChanged));
+    monitorsChanged(0, 0, m_monitors->get_n_items());
 }
 
-void logIconTheme()
+void Dumbar::monitorsChanged(guint position, guint removed, guint added)
 {
-    qCDebug(lcDumbar) << "Qt icon theme"
-                      << "name=" << QIcon::themeName()
-                      << "fallback=" << QIcon::fallbackThemeName()
-                      << "searchPaths=" << QIcon::themeSearchPaths();
-
-    if (QIcon::themeName().isEmpty())
-        qCWarning(lcDumbar) << "Qt icon theme is unset; QIcon::fromTheme lookups may return null";
+    m_panels.erase(m_panels.begin() + position, m_panels.begin() + position + removed);
+    for (guint i = position; i < position + added; ++i) {
+        const auto monitor = std::dynamic_pointer_cast<Gdk::Monitor>(m_monitors->get_object(i));
+        auto panel = std::make_unique<Panel>(monitor, m_toplevels, m_icons, m_statusNotifierHost, m_audioBackend);
+        m_application.add_window(*panel);
+        panel->present();
+        m_panels.insert(m_panels.begin() + i, std::move(panel));
+    }
 }
 }
 
 int main(int argc, char **argv)
 {
-    configureDumbarLogging();
-    QApplication app(argc, argv);
-    app.setApplicationName(QStringLiteral("dumbar"));
-    app.setApplicationDisplayName(QStringLiteral("dumbar"));
-    configureIconTheme();
-    logIconTheme();
+    gdk_set_allowed_backends("wayland");
+    const auto application = Gtk::Application::create("io.github.tokyo4j.dumbar",
+                                                      Gio::Application::Flags::NON_UNIQUE);
+    std::unique_ptr<Dumbar> dumbar;
 
-    qCDebug(lcDumbar) << "starting dumbar"
-                             << "platform=" << app.platformName()
-                             << "screens=" << app.screens().size();
+    application->signal_startup().connect([] {
+        Gtk::Settings::get_default()->property_gtk_icon_theme_name() = Config::kIconTheme;
+        const auto css = Gtk::CssProvider::create();
+        css->load_from_string(Config::kStyleSheet);
+        Gtk::StyleProvider::add_provider_for_display(Gdk::Display::get_default(),
+                                                     css,
+                                                     GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    });
+    application->signal_activate().connect([&] {
+        // Keep running while no monitor is connected.
+        application->hold();
+        dumbar = std::make_unique<Dumbar>(*application);
+    });
+    application->signal_shutdown().connect([&] { dumbar.reset(); });
 
-    if (!app.platformName().startsWith(QStringLiteral("wayland"))) {
-        qCritical() << "dumbar requires a Wayland Qt platform; X11 is not supported";
-        return 1;
-    }
-
-    auto *nativeWayland = qGuiApp->nativeInterface<QNativeInterface::QWaylandApplication>();
-    if (!nativeWayland) {
-        qCritical("dumbar could not access Qt's Wayland connection");
-        return 1;
-    }
-
-    qCDebug(lcDumbar) << "using Qt Wayland connection"
-                             << "display=" << static_cast<void *>(nativeWayland->display())
-                             << "seat=" << static_cast<void *>(nativeWayland->seat());
-
-    ToplevelManager toplevelManager(nativeWayland->display(), nativeWayland->seat(), &app);
-    IconResolver icons(&app);
-    QHash<QScreen *, Panel *> panels;
-
-    const auto addPanel = [&panels, &toplevelManager, &icons](QScreen *screen) {
-        if (!screen || panels.contains(screen))
-            return;
-        qCDebug(lcDumbar) << "adding panel"
-                                 << "screen=" << screen->name()
-                                 << "geometry=" << screen->geometry()
-                                 << "availableGeometry=" << screen->availableGeometry()
-                                 << "devicePixelRatio=" << screen->devicePixelRatio();
-        auto *panel = new Panel(&toplevelManager, &icons, screen);
-        panels.insert(screen, panel);
-        panel->show();
-    };
-    const auto removePanel = [&panels](QScreen *screen) {
-        if (Panel *panel = panels.take(screen)) {
-            qCDebug(lcDumbar) << "removing panel"
-                                     << "screen=" << (screen ? screen->name() : QStringLiteral("<null>"));
-            panel->close();
-            panel->deleteLater();
-        }
-    };
-
-    for (QScreen *screen : app.screens())
-        addPanel(screen);
-    QObject::connect(&app, &QGuiApplication::screenAdded, &app, addPanel);
-    QObject::connect(&app, &QGuiApplication::screenRemoved, &app, removePanel);
-
-    const int result = app.exec();
-    qCDebug(lcDumbar) << "event loop exited with code" << result;
-    qDeleteAll(panels);
-    panels.clear();
-    return result;
+    return application->run(argc, argv);
 }

@@ -1,39 +1,36 @@
 #pragma once
 
-#include <QToolButton>
+#include <giomm/simpleaction.h>
+#include <gtkmm/box.h>
+#include <gtkmm/button.h>
+#include <gtkmm/image.h>
+#include <gtkmm/label.h>
+#include <gtkmm/popovermenu.h>
 
 class IconResolver;
-class LayerShellTooltip;
 class Toplevel;
 
-class TaskButton final : public QToolButton
+class TaskButton final : public Gtk::Button
 {
-    Q_OBJECT
-
 public:
-    TaskButton(Toplevel *toplevel, IconResolver *icons, QWidget *parent = nullptr);
+    TaskButton(Toplevel &toplevel, IconResolver &icons);
+    ~TaskButton() override;
 
-    Toplevel *toplevel() const { return m_toplevel; }
+    Toplevel &toplevel() const { return m_toplevel; }
 
-public:
     void refresh();
 
-protected:
-    void paintEvent(QPaintEvent *event) override;
-    void mousePressEvent(QMouseEvent *event) override;
-    void mouseMoveEvent(QMouseEvent *event) override;
-    void mouseReleaseEvent(QMouseEvent *event) override;
-
 private:
-    void activateOrMinimize();
-    void closeToplevel();
-    void startDrag();
+    void pressed(guint button, double x, double y);
 
-    Toplevel *m_toplevel = nullptr;
-    IconResolver *m_icons = nullptr;
-    LayerShellTooltip *m_tooltip = nullptr;
-    QIcon m_icon;
-    QPoint m_pressPosition;
-    bool m_dragStarted = false;
-    bool m_dragging = false;
+    Toplevel &m_toplevel;
+    IconResolver &m_icons;
+    Gtk::Box m_box;
+    Gtk::Image m_icon;
+    Gtk::Label m_title;
+    Gtk::PopoverMenu m_menu;
+    // Check items in the menu, reflecting the window state.
+    Glib::RefPtr<Gio::SimpleAction> m_minimizeAction;
+    Glib::RefPtr<Gio::SimpleAction> m_maximizeAction;
+    Glib::RefPtr<Gio::SimpleAction> m_fullscreenAction;
 };

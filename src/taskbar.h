@@ -1,61 +1,44 @@
 #pragma once
 
-#include "toplevelmanager.h"
+#include <gtkmm/widget.h>
 
-#include <QList>
-#include <QPointer>
-#include <QWidget>
+#include <memory>
+#include <vector>
 
 class IconResolver;
 class TaskButton;
+class Toplevel;
+class ToplevelManager;
 struct wl_output;
-class QDragEnterEvent;
-class QDragLeaveEvent;
-class QDragMoveEvent;
-class QDropEvent;
-class QResizeEvent;
 
-int taskButtonWidth(int availableWidth, int windowCount);
-
-class TaskBar final : public QWidget
+// Lays out the task buttons of the windows on one output. Every button gets
+// the same width, which shrinks once the preferred widths no longer fit.
+// Buttons are reordered by dragging them.
+class TaskBar final : public Gtk::Widget
 {
-    Q_OBJECT
-
 public:
-    TaskBar(ToplevelManager *manager,
-            IconResolver *icons,
-            wl_output *output,
-            QWidget *parent = nullptr);
+    TaskBar(ToplevelManager &manager, IconResolver &icons, wl_output *output);
+    ~TaskBar() override;
 
 protected:
-    void resizeEvent(QResizeEvent *event) override;
-    void dragEnterEvent(QDragEnterEvent *event) override;
-    void dragLeaveEvent(QDragLeaveEvent *event) override;
-    void dragMoveEvent(QDragMoveEvent *event) override;
-    void dropEvent(QDropEvent *event) override;
-
-private slots:
-    void addToplevel(Toplevel *toplevel);
-    void removeToplevel(Toplevel *toplevel);
-    void updateToplevel(Toplevel *toplevel);
-    void managerAvailabilityChanged(bool available);
+    Gtk::SizeRequestMode get_request_mode_vfunc() const override;
+    void measure_vfunc(Gtk::Orientation orientation,
+                       int forSize,
+                       int &minimum,
+                       int &natural,
+                       int &minimumBaseline,
+                       int &naturalBaseline) const override;
+    void size_allocate_vfunc(int width, int height, int baseline) override;
 
 private:
-    TaskButton *buttonFor(Toplevel *toplevel) const;
-    QList<TaskButton *> visibleButtons(TaskButton *excluded = nullptr) const;
-    TaskButton *dragSource(const QDropEvent *event) const;
-    bool acceptDrag(QDropEvent *event);
-    void updateDropIndicator(const QPoint &position, TaskButton *source);
-    void clearDropIndicator();
-    void reorderButton(TaskButton *button, int insertionIndex);
-    void recalculateWidths();
+    void updateToplevel(Toplevel &toplevel);
+    void removeToplevel(Toplevel &toplevel);
+    void addDragSource(TaskButton &button);
+    // Moves the dragged button into the place of the button under the pointer.
+    Gdk::DragAction dragMotion(double x);
 
-    IconResolver *m_icons = nullptr;
-    wl_output *m_output = nullptr;
-    class QHBoxLayout *m_layout = nullptr;
-    QList<TaskButton *> m_buttons;
-    QWidget *m_dropIndicator = nullptr;
-    QPointer<TaskButton> m_draggedButton;
-    QPoint m_lastDragPosition;
-    int m_dropIndex = -1;
+    IconResolver &m_icons;
+    wl_output *m_output;
+    std::vector<std::unique_ptr<TaskButton>> m_buttons;
+    TaskButton *m_dragged = nullptr;
 };

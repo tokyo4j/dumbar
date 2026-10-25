@@ -1,48 +1,44 @@
 #pragma once
 
-#include "trayitem.h"
+#include <gtkmm/box.h>
+#include <gtkmm/button.h>
+#include <gtkmm/image.h>
+#include <gtkmm/popovermenu.h>
 
-#include <QDBusConnection>
-#include <QDBusContext>
-#include <QHash>
-#include <QPointer>
-#include <QWidget>
+#include <memory>
+#include <vector>
 
-class QDBusServiceWatcher;
-class LayerShellMenu;
+class StatusNotifierHost;
+class TrayItem;
 
-class Tray final : public QWidget, protected QDBusContext
+class TrayButton final : public Gtk::Button
 {
-    Q_OBJECT
-
 public:
-    explicit Tray(QWidget *parent = nullptr);
-    ~Tray() override;
+    explicit TrayButton(TrayItem &item);
+    ~TrayButton() override;
 
-public slots:
-    QString registerItem(const QString &registration);
-    void unregisterItem(const QString &itemId);
-
-public:
-    void removeItemsForService(const QString &service);
-    QStringList registeredItems() const;
+    TrayItem &item() const { return m_item; }
 
 private:
-    void serviceUnregistered(const QString &service);
-    void connectToWatcher();
-    void setupLocalWatcher();
-    void loadRegisteredItems();
-    void removeItem(const QString &itemId);
-    void closePopup();
-    void showPopup(TrayItem *item);
+    void refresh();
+    void pressed(guint button);
+    void showMenu();
+
+    TrayItem &m_item;
+    Gtk::Image m_icon;
+    Gtk::PopoverMenu m_menu;
+};
+
+class Tray final : public Gtk::Box
+{
+public:
+    explicit Tray(StatusNotifierHost &host);
+
+private:
+    void addItem(TrayItem &item);
+    void removeItem(TrayItem &item);
+    // Hides the tray when there is nothing to show, so it takes no spacing.
     void updateVisibility();
 
-    QDBusConnection m_bus;
-    QDBusServiceWatcher *m_serviceWatcher = nullptr;
-    QObject *m_localWatcher = nullptr;
-    class QHBoxLayout *m_layout = nullptr;
-    QHash<QString, TrayItem *> m_items;
-    QPointer<LayerShellMenu> m_popup;
-    QPointer<TrayItem> m_popupItem;
-    bool m_ownsWatcher = false;
+    std::vector<std::unique_ptr<TrayButton>> m_buttons;
 };

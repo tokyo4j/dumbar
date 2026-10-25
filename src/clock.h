@@ -1,27 +1,22 @@
 #pragma once
 
-#include <QPointer>
-#include <QTimer>
-#include <QToolButton>
+#include <gtkmm/calendar.h>
+#include <gtkmm/label.h>
+#include <gtkmm/menubutton.h>
+#include <gtkmm/popover.h>
 
-class QCalendarWidget;
-class LayerShellTooltip;
-
-class Clock final : public QToolButton
+// Shows the time and toggles a calendar popover when clicked.
+class Clock final : public Gtk::MenuButton
 {
-    Q_OBJECT
-
 public:
-    explicit Clock(QWidget *parent = nullptr);
-
-private slots:
-    void updateClock();
-    void showCalendar();
+    Clock();
 
 private:
-    void scheduleNextUpdate();
+    // Updates the clock and schedules the next update at the start of the next minute.
+    void tick();
 
-    QTimer m_timer;
-    QPointer<QCalendarWidget> m_calendar;
-    LayerShellTooltip *m_tooltip = nullptr;
+    // A label child, unlike set_label(), comes without a dropdown arrow.
+    Gtk::Label m_label;
+    Gtk::Popover m_popover;
+    Gtk::Calendar m_calendar;
 };
