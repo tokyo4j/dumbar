@@ -65,6 +65,9 @@ void Dumbar::monitorsChanged(guint position, guint removed, guint added)
 int main(int argc, char **argv)
 {
     gdk_set_allowed_backends("wayland");
+    // The GPU renderers load the GPU driver stack (~90 MB of LLVM and Mesa) for
+    // no benefit in a small panel.
+    g_setenv("GSK_RENDERER", "cairo", false);
     const auto application = Gtk::Application::create("io.github.tokyo4j.dumbar",
                                                       Gio::Application::Flags::NON_UNIQUE);
     std::unique_ptr<Dumbar> dumbar;
