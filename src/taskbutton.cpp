@@ -76,6 +76,8 @@ TaskButton::TaskButton(Toplevel &toplevel, WorkspaceManager &workspaces, IconRes
     menu->append_section(states);
     menu->append_submenu("Move to Workspace", m_workspaceMenu);
     menu->append("Close", "task.close");
+    // Keep the parent menu visible while a submenu is open.
+    m_menu.set_flags(Gtk::PopoverMenu::Flags::NESTED);
     m_menu.set_menu_model(menu);
     m_menu.set_has_arrow(false);
     m_menu.set_parent(*this);
