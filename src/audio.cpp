@@ -2,6 +2,7 @@
 
 #include "config.h"
 
+#include <gtkmm/eventcontrollermotion.h>
 #include <gtkmm/eventcontrollerscroll.h>
 
 #include <pulse/error.h>
@@ -24,13 +25,15 @@ void unref(pa_operation *operation)
         pa_operation_unref(operation);
 }
 
-const char *speakerIconName(const AudioBackend::Device &speaker)
+const char *iconName(AudioEndpoint endpoint, const AudioBackend::Device &device)
 {
-    if (speaker.muted)
+    if (endpoint == AudioEndpoint::Microphone)
+        return device.muted ? "microphone-sensitivity-muted" : "microphone-sensitivity-high";
+    if (device.muted)
         return "audio-volume-muted";
-    if (speaker.percent() < 34)
+    if (device.percent() < 34)
         return "audio-volume-low";
-    if (speaker.percent() < 67)
+    if (device.percent() < 67)
         return "audio-volume-medium";
     return "audio-volume-high";
 }
@@ -131,41 +134,46 @@ void AudioBackend::refresh()
         }, this));
 }
 
-Audio::Audio(AudioBackend &backend)
+VolumeButton::VolumeButton(AudioBackend &backend, AudioEndpoint endpoint)
     : m_backend(backend)
+    , m_endpoint(endpoint)
 {
-    setupButton(m_microphone, m_microphoneIcon, AudioEndpoint::Microphone);
-    setupButton(m_speaker, m_speakerIcon, AudioEndpoint::Speaker);
-    m_backend.changed.connect(sigc::mem_fun(*this, &Audio::update));
-    update();
-}
-
-void Audio::setupButton(Gtk::Button &button, Gtk::Image &icon, AudioEndpoint endpoint)
-{
-    icon.set_pixel_size(Config::kIconSize);
-    button.set_child(icon);
-    button.set_focus_on_click(false);
-    button.signal_clicked().connect([this, endpoint] { m_backend.toggleMute(endpoint); });
+    m_icon.set_pixel_size(Config::kIconSize);
+    set_child(m_icon);
+    set_focus_on_click(false);
+    signal_clicked().connect([this] { m_backend.toggleMute(m_endpoint); });
 
     const auto scroll = Gtk::EventControllerScroll::create();
     scroll->set_flags(Gtk::EventControllerScroll::Flags::VERTICAL | Gtk::EventControllerScroll::Flags::DISCRETE);
-    scroll->signal_scroll().connect([this, endpoint](double, double dy) {
-        m_backend.changeVolume(endpoint, -dy * Config::kVolumeScrollStep);
+    scroll->signal_scroll().connect([this](double, double dy) {
+        m_backend.changeVolume(m_endpoint, -dy * Config::kVolumeScrollStep);
         return true;
     }, false);
-    button.add_controller(scroll);
+    add_controller(scroll);
 
-    append(button);
+    const auto motion = Gtk::EventControllerMotion::create();
+    motion->signal_enter().connect([this](double, double) { m_tooltip.popup(); });
+    motion->signal_leave().connect([this] { m_tooltip.popdown(); });
+    add_controller(motion);
+
+    m_tooltip.set_child(m_tooltipLabel);
+    m_tooltip.set_autohide(false);
+    m_tooltip.set_has_arrow(false);
+    m_tooltip.set_parent(*this);
+
+    m_backend.changed.connect(sigc::mem_fun(*this, &VolumeButton::update));
+    update();
 }
 
-void Audio::update()
+VolumeButton::~VolumeButton()
 {
-    const AudioBackend::Device &microphone = m_backend.device(AudioEndpoint::Microphone);
-    m_microphoneIcon.set_from_icon_name(microphone.muted ? "microphone-sensitivity-muted"
-                                                         : "microphone-sensitivity-high");
-    m_microphone.set_tooltip_text(std::format("mic: {}%", std::lround(microphone.percent())));
+    m_tooltip.unparent();
+}
 
-    const AudioBackend::Device &speaker = m_backend.device(AudioEndpoint::Speaker);
-    m_speakerIcon.set_from_icon_name(speakerIconName(speaker));
-    m_speaker.set_tooltip_text(std::format("speaker: {}%", std::lround(speaker.percent())));
+void VolumeButton::update()
+{
+    const AudioBackend::Device &device = m_backend.device(m_endpoint);
+    const char *name = m_endpoint == AudioEndpoint::Microphone ? "mic" : "speaker";
+    m_icon.set_from_icon_name(iconName(m_endpoint, device));
+    m_tooltipLabel.set_text(std::format("{}: {}%", name, std::lround(device.percent())));
 }

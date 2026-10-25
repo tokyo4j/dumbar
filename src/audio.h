@@ -1,8 +1,9 @@
 #pragma once
 
-#include <gtkmm/box.h>
 #include <gtkmm/button.h>
 #include <gtkmm/image.h>
+#include <gtkmm/label.h>
+#include <gtkmm/popover.h>
 #include <sigc++/signal.h>
 
 #include <pulse/context.h>
@@ -45,18 +46,21 @@ private:
     Device m_microphone;
 };
 
-class Audio final : public Gtk::Box
+// Toggles mute when clicked and changes the volume when scrolled.
+class VolumeButton final : public Gtk::Button
 {
 public:
-    explicit Audio(AudioBackend &backend);
+    VolumeButton(AudioBackend &backend, AudioEndpoint endpoint);
+    ~VolumeButton() override;
 
 private:
-    void setupButton(Gtk::Button &button, Gtk::Image &icon, AudioEndpoint endpoint);
     void update();
 
     AudioBackend &m_backend;
-    Gtk::Button m_microphone;
-    Gtk::Image m_microphoneIcon;
-    Gtk::Button m_speaker;
-    Gtk::Image m_speakerIcon;
+    AudioEndpoint m_endpoint;
+    Gtk::Image m_icon;
+    // GTK hides tooltips on every scroll event, so a tooltip would flicker
+    // while the volume is scrolled. This popover stays open instead.
+    Gtk::Popover m_tooltip;
+    Gtk::Label m_tooltipLabel;
 };

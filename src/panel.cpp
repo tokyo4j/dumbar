@@ -13,7 +13,8 @@ Panel::Panel(const Glib::RefPtr<Gdk::Monitor> &monitor,
     : m_box(Gtk::Orientation::HORIZONTAL, 4)
     , m_taskbar(toplevels, icons, gdk_wayland_monitor_get_wl_output(monitor->gobj()))
     , m_tray(statusNotifierHost)
-    , m_audio(audioBackend)
+    , m_microphone(audioBackend, AudioEndpoint::Microphone)
+    , m_speaker(audioBackend, AudioEndpoint::Speaker)
 {
     add_css_class("panel");
     set_title("dumbar");
@@ -30,7 +31,8 @@ Panel::Panel(const Glib::RefPtr<Gdk::Monitor> &monitor,
 
     m_box.append(m_taskbar);
     m_box.append(m_tray);
-    m_box.append(m_audio);
+    m_box.append(m_microphone);
+    m_box.append(m_speaker);
     m_box.append(m_battery);
     m_box.append(m_clock);
     set_child(m_box);

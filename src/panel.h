@@ -28,7 +28,8 @@ private:
     Gtk::Box m_box;
     TaskBar m_taskbar;
     Tray m_tray;
-    Audio m_audio;
+    VolumeButton m_microphone;
+    VolumeButton m_speaker;
     Battery m_battery;
     Clock m_clock;
 };
