@@ -9,15 +9,17 @@ class IconResolver;
 class TaskButton;
 class Toplevel;
 class ToplevelManager;
+class WorkspaceManager;
 struct wl_output;
 
-// Lays out the task buttons of the windows on one output. Every button gets
+// Lays out the task buttons of the windows on one output and the active
+// workspace. Every button gets
 // the same width, which shrinks once the preferred widths no longer fit.
 // Buttons are reordered by dragging them.
 class TaskBar final : public Gtk::Widget
 {
 public:
-    TaskBar(ToplevelManager &manager, IconResolver &icons, wl_output *output);
+    TaskBar(ToplevelManager &manager, WorkspaceManager &workspaces, IconResolver &icons, wl_output *output);
     ~TaskBar() override;
 
 protected:
@@ -31,12 +33,15 @@ protected:
     void size_allocate_vfunc(int width, int height, int baseline) override;
 
 private:
+    bool shows(const Toplevel &toplevel) const;
     void updateToplevel(Toplevel &toplevel);
+    void updateWorkspaces();
     void removeToplevel(Toplevel &toplevel);
     void addDragSource(TaskButton &button);
     // Moves the dragged button into the place of the button under the pointer.
     Gdk::DragAction dragMotion(double x);
 
+    WorkspaceManager &m_workspaces;
     IconResolver &m_icons;
     wl_output *m_output;
     std::vector<std::unique_ptr<TaskButton>> m_buttons;

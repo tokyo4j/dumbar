@@ -13,6 +13,7 @@
 class IconResolver;
 class StatusNotifierHost;
 class ToplevelManager;
+class WorkspaceManager;
 
 // A layer-shell bar at the top of one monitor.
 class Panel final : public Gtk::Window
@@ -20,6 +21,7 @@ class Panel final : public Gtk::Window
 public:
     Panel(const Glib::RefPtr<Gdk::Monitor> &monitor,
           ToplevelManager &toplevels,
+          WorkspaceManager &workspaces,
           IconResolver &icons,
           StatusNotifierHost &statusNotifierHost,
           AudioBackend &audioBackend);

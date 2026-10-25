@@ -4,6 +4,7 @@
 #include "panel.h"
 #include "statusnotifierhost.h"
 #include "toplevelmanager.h"
+#include "workspacemanager.h"
 
 #include <gdk/wayland/gdkwayland.h>
 #include <gtkmm/application.h>
@@ -27,6 +28,8 @@ private:
 
     Gtk::Application &m_application;
     Glib::RefPtr<Gio::ListModel> m_monitors;
+    // Before the toplevels, which refer to the workspaces.
+    WorkspaceManager m_workspaces;
     ToplevelManager m_toplevels;
     IconResolver m_icons;
     StatusNotifierHost m_statusNotifierHost;
@@ -42,6 +45,7 @@ GdkDisplay *defaultDisplay()
 Dumbar::Dumbar(Gtk::Application &application)
     : m_application(application)
     , m_monitors(Gdk::Display::get_default()->get_monitors())
+    , m_workspaces(gdk_wayland_display_get_wl_display(defaultDisplay()))
     , m_toplevels(gdk_wayland_display_get_wl_display(defaultDisplay()),
                   gdk_wayland_seat_get_wl_seat(gdk_display_get_default_seat(defaultDisplay())))
 {
@@ -54,7 +58,7 @@ void Dumbar::monitorsChanged(guint position, guint removed, guint added)
     m_panels.erase(m_panels.begin() + position, m_panels.begin() + position + removed);
     for (guint i = position; i < position + added; ++i) {
         const auto monitor = std::dynamic_pointer_cast<Gdk::Monitor>(m_monitors->get_object(i));
-        auto panel = std::make_unique<Panel>(monitor, m_toplevels, m_icons, m_statusNotifierHost, m_audioBackend);
+        auto panel = std::make_unique<Panel>(monitor, m_toplevels, m_workspaces, m_icons, m_statusNotifierHost, m_audioBackend);
         m_application.add_window(*panel);
         panel->present();
         m_panels.insert(m_panels.begin() + i, std::move(panel));

@@ -3,6 +3,7 @@
 #include "config.h"
 #include "taskbutton.h"
 #include "toplevelmanager.h"
+#include "workspacemanager.h"
 
 #include <gtkmm/dragsource.h>
 #include <gtkmm/droptarget.h>
@@ -10,8 +11,9 @@
 #include <algorithm>
 #include <cassert>
 
-TaskBar::TaskBar(ToplevelManager &manager, IconResolver &icons, wl_output *output)
-    : m_icons(icons)
+TaskBar::TaskBar(ToplevelManager &manager, WorkspaceManager &workspaces, IconResolver &icons, wl_output *output)
+    : m_workspaces(workspaces)
+    , m_icons(icons)
     , m_output(output)
 {
     set_hexpand(true);
@@ -19,6 +21,7 @@ TaskBar::TaskBar(ToplevelManager &manager, IconResolver &icons, wl_output *outpu
 
     manager.toplevelUpdated.connect(sigc::mem_fun(*this, &TaskBar::updateToplevel));
     manager.toplevelRemoved.connect(sigc::mem_fun(*this, &TaskBar::removeToplevel));
+    workspaces.changed.connect(sigc::mem_fun(*this, &TaskBar::updateWorkspaces));
     for (const auto &toplevel : manager.toplevels())
         updateToplevel(*toplevel);
 
@@ -83,18 +86,30 @@ void TaskBar::size_allocate_vfunc(int width, int height, int)
     }
 }
 
+bool TaskBar::shows(const Toplevel &toplevel) const
+{
+    return toplevel.onOutput(m_output) && toplevel.onActiveWorkspace();
+}
+
 void TaskBar::updateToplevel(Toplevel &toplevel)
 {
     auto it = std::ranges::find(m_buttons, &toplevel, [](const auto &button) { return &button->toplevel(); });
     if (it == m_buttons.end()) {
-        auto button = std::make_unique<TaskButton>(toplevel, m_icons);
+        auto button = std::make_unique<TaskButton>(toplevel, m_workspaces, m_icons);
         button->set_parent(*this);
         addDragSource(*button);
         it = m_buttons.insert(m_buttons.end(), std::move(button));
     } else {
         (*it)->refresh();
     }
-    (*it)->set_visible(toplevel.onOutput(m_output));
+    (*it)->set_visible(shows(toplevel));
+}
+
+// The active workspace may have changed.
+void TaskBar::updateWorkspaces()
+{
+    for (const auto &button : m_buttons)
+        button->set_visible(shows(button->toplevel()));
 }
 
 void TaskBar::removeToplevel(Toplevel &toplevel)

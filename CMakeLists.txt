@@ -14,26 +14,30 @@ pkg_check_modules(WAYLAND_CLIENT REQUIRED IMPORTED_TARGET wayland-client)
 pkg_check_modules(PULSE REQUIRED IMPORTED_TARGET libpulse libpulse-mainloop-glib)
 find_program(WAYLAND_SCANNER wayland-scanner REQUIRED)
 
-set(FOREIGN_TOPLEVEL_XML
-    "${CMAKE_CURRENT_SOURCE_DIR}/protocol/wlr-foreign-toplevel-management-unstable-v1.xml")
-set(FOREIGN_TOPLEVEL_HEADER
-    "${CMAKE_CURRENT_BINARY_DIR}/wayland-wlr-foreign-toplevel-management-unstable-v1-client-protocol.h")
-set(FOREIGN_TOPLEVEL_CODE
-    "${CMAKE_CURRENT_BINARY_DIR}/wayland-wlr-foreign-toplevel-management-unstable-v1-protocol.c")
-
-add_custom_command(
-    OUTPUT "${FOREIGN_TOPLEVEL_HEADER}"
-    COMMAND "${WAYLAND_SCANNER}" client-header "${FOREIGN_TOPLEVEL_XML}" "${FOREIGN_TOPLEVEL_HEADER}"
-    DEPENDS "${WAYLAND_SCANNER}" "${FOREIGN_TOPLEVEL_XML}"
-    VERBATIM
+set(PROTOCOLS
+    ext-workspace-v1
+    wlr-foreign-toplevel-management-unstable-v1
+    xfce-foreign-toplevel-management-private-v1
 )
-
-add_custom_command(
-    OUTPUT "${FOREIGN_TOPLEVEL_CODE}"
-    COMMAND "${WAYLAND_SCANNER}" private-code "${FOREIGN_TOPLEVEL_XML}" "${FOREIGN_TOPLEVEL_CODE}"
-    DEPENDS "${WAYLAND_SCANNER}" "${FOREIGN_TOPLEVEL_XML}" "${FOREIGN_TOPLEVEL_HEADER}"
-    VERBATIM
-)
+set(PROTOCOL_SOURCES)
+foreach(PROTOCOL IN LISTS PROTOCOLS)
+    set(XML "${CMAKE_CURRENT_SOURCE_DIR}/protocol/${PROTOCOL}.xml")
+    set(HEADER "${CMAKE_CURRENT_BINARY_DIR}/wayland-${PROTOCOL}-client-protocol.h")
+    set(CODE "${CMAKE_CURRENT_BINARY_DIR}/wayland-${PROTOCOL}-protocol.c")
+    add_custom_command(
+        OUTPUT "${HEADER}"
+        COMMAND "${WAYLAND_SCANNER}" client-header "${XML}" "${HEADER}"
+        DEPENDS "${WAYLAND_SCANNER}" "${XML}"
+        VERBATIM
+    )
+    add_custom_command(
+        OUTPUT "${CODE}"
+        COMMAND "${WAYLAND_SCANNER}" private-code "${XML}" "${CODE}"
+        DEPENDS "${WAYLAND_SCANNER}" "${XML}" "${HEADER}"
+        VERBATIM
+    )
+    list(APPEND PROTOCOL_SOURCES "${HEADER}" "${CODE}")
+endforeach()
 
 add_executable(dumbar
     src/main.cpp
@@ -46,6 +50,8 @@ add_executable(dumbar
     src/taskbutton.h
     src/toplevelmanager.cpp
     src/toplevelmanager.h
+    src/workspacemanager.cpp
+    src/workspacemanager.h
     src/iconresolver.cpp
     src/iconresolver.h
     src/tray.cpp
@@ -60,8 +66,7 @@ add_executable(dumbar
     src/battery.h
     src/clock.cpp
     src/clock.h
-    "${FOREIGN_TOPLEVEL_HEADER}"
-    "${FOREIGN_TOPLEVEL_CODE}"
+    ${PROTOCOL_SOURCES}
 )
 
 target_include_directories(dumbar PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")

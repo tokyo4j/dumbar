@@ -7,11 +7,12 @@
 
 Panel::Panel(const Glib::RefPtr<Gdk::Monitor> &monitor,
              ToplevelManager &toplevels,
+             WorkspaceManager &workspaces,
              IconResolver &icons,
              StatusNotifierHost &statusNotifierHost,
              AudioBackend &audioBackend)
     : m_box(Gtk::Orientation::HORIZONTAL, 4)
-    , m_taskbar(toplevels, icons, gdk_wayland_monitor_get_wl_output(monitor->gobj()))
+    , m_taskbar(toplevels, workspaces, icons, gdk_wayland_monitor_get_wl_output(monitor->gobj()))
     , m_tray(statusNotifierHost)
     , m_microphone(audioBackend, AudioEndpoint::Microphone)
     , m_speaker(audioBackend, AudioEndpoint::Speaker)

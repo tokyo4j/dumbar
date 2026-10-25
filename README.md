@@ -4,7 +4,7 @@ A simple wayland panel and taskbar built with GTK 4.
 
 ## Supported widgets
 
-- Taskbar with live windows, application icons, focus, minimize, maximize, fullscreen, close, and drag-and-drop reordering
+- Taskbar with the windows on the active workspace, window icons, focus, minimize, maximize, fullscreen, sticky, move to workspace, close, and drag-and-drop reordering
 - System tray with StatusNotifier items and context menus
 - Speaker and microphone volume controls with mute and mouse-wheel adjustment
 - Battery percentage, charging state, and remaining-time display
